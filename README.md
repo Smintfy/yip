@@ -1,5 +1,4 @@
-## yip
-____
+# yip
 yip is a toy interpreted programming language.
 
 ### Example
