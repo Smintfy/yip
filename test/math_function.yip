@@ -1,0 +1,10 @@
+; square root
+(+ (sqrt π) 3)
+(sqrt (+ 2 2))
+
+; exponential function
+(exp 2)
+
+; power, f(m1, m2, ..., mn): m1^m2^...^mn
+(pow 2)
+(pow 4 2)
