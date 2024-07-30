@@ -1,226 +1,303 @@
-from typing import List, Tuple
+from __future__ import annotations
+from abc import ABC, abstractmethod
+from typing import List
 from enum import Enum
+from dataclasses import dataclass
 import sys
 
 class TokenType(Enum):
     # Single characters
     LEFT_PAREN  = "LEFT_PAREN"
     RIGHT_PAREN = "RIGHT_PAREN"
-    OPERATOR = "OPERATOR"
+    PLUS = "PLUS"
+    MINUS = "MINUS"
+    STAR = "STAR"
+    SLASH = "SLASH"
     SEMICOLON = "SEMICOLON"
 
     # Literals
-    # IDENTIFIER = "IDENTIFIER"
-    # STRING = "STRING"
+    IDENTIFIER = "IDENTIFIER"
+    STRING = "STRING"
     NUMBER = "NUMBER"
     CONSTANT = "CONSTANT"
-    MATH_FUNC = "MATH_FUNC"
 
-    # Logical statement
-    # NOT = "NOT"
-    # AND = "AND"
-    # OR = "OR"
-    # NAND = "NAND"
-    # NOR = "NOR"
+    # Keywords
+    SET = "SET"
+    PUT = "PUT"
 
     # End-of-line
     EOF = "EOF"
 
-
-class Constant(Enum):
-    PI = 3.141592653589793
-    EULER_NUMBER = 2.718281828459045
-    SQRT_2 = 1.414213562373095
+keywords = {
+    "set": TokenType.SET,
+    "put": TokenType.PUT
+}
 
 class Token:
-    def __init__(self, token_type: TokenType, literal):
+    def __init__(self, token_type: TokenType, lexeme: str, literal: object, line: int):
         self.token_type = token_type
+        self.lexeme = lexeme
         self.literal = literal
+        self.line = line
 
     def __str__(self) -> str:
-        return f"{self.token_type.value} {self.literal}"
+        return f"{self.token_type.value} {self.lexeme} {self.literal}"
     
 class Lexer:
     def __init__(self, source: str):
         self.source = source
         self.tokens = []
+        self.start = 0
         self.current = 0
+        self.line = 1
 
     def tokenize(self) -> List[Token]:
         while not self.is_at_end():
+            self.start = self.current
             self.scan_token()
-        self.add_token(TokenType.EOF, "")
+        self.tokens.append(Token(TokenType.EOF, "", None, self.line))
         return self.tokens
 
     def scan_token(self):
         char = self.advance()
         match char:
-            case "(":
-                self.add_token(TokenType.LEFT_PAREN, char)
-            case ")":
-                self.add_token(TokenType.RIGHT_PAREN, char)
-            case "+" | "-" | "*" | "/":
-                if char == "-" and self.source[self.current].isdigit():
-                    self.number(char)
-                else:
-                    self.add_token(TokenType.OPERATOR, char)
+            case "(": self.add_token(TokenType.LEFT_PAREN)
+            case ")": self.add_token(TokenType.RIGHT_PAREN)
+            case "+": self.add_token(TokenType.PLUS)
+            case "-": self.add_token(TokenType.MINUS)
+            case "*": self.add_token(TokenType.STAR)
+            case "/": self.add_token(TokenType.SLASH)
             case ";":
-                while self.source[self.current] != "\n":
+                while self.peek() != "\n" and not self.is_at_end():
                     self.advance()
-            case "p":
-                if self.source[self.current] == "i":
-                    self.advance()
-                    self.add_token(TokenType.CONSTANT, Constant.PI.value)
-                if self.match("ow"):
-                     self.add_token(TokenType.MATH_FUNC, "pow")
-            case "e":
-                # f(x): e^x
-                if self.match("xp"):
-                    self.add_token(TokenType.MATH_FUNC, "exp")
-                else:
-                    self.add_token(TokenType.CONSTANT, Constant.EULER_NUMBER.value)
-            case "s":
-                # square root
-                if self.match("qrt"):
-                    self.add_token(TokenType.MATH_FUNC, "sqrt")
-            case "π":
-                self.add_token(TokenType.CONSTANT, Constant.PI.value)
+            case '"':
+                self.string()
+            case "\n":
+                self.line += 1
             case _:
                 if char.isdigit():
-                    self.number(char)
+                    self.number()
+                elif char.isalpha():
+                    self.identifier()
                 elif char.isspace():
                     pass
                 else:
-                    raise ValueError(f"Unexpected character: {char}")
+                    raise ValueError(f"Unexpected character: {char} in line: {self.line}")
 
     def advance(self) -> str:
         self.current += 1
         return self.source[self.current - 1]
 
     def is_at_end(self) -> bool:
-        return self.current >= len(self.source)
-    
-    def number(self, char: str):
-        num = char
-        while self.source[self.current].isdigit() or self.source[self.current] == '.':
-            # append the sequence of negative number and float
-            num += self.advance()
-        self.add_token(TokenType.NUMBER, float(num))
+        return (self.current) >= len(self.source)
 
-    def match(self, expected: str) -> bool:
-        if self.source[self.current:self.current + len(expected)] == expected:
-            self.current += len(expected)
-            return True
-        return False
+    def peek(self) -> str:
+        if self.is_at_end():
+            return "\0"
+        return self.source[self.current]
     
-    def add_token(self, token_type: TokenType, literal):
-        self.tokens.append(Token(token_type, literal))
+    def peek_next(self) -> str:
+        if self.current + 1 >= len(self.source):
+            return "\0"
+        return self.source[self.current + 1] 
     
+    def add_token(self, token_type: TokenType, literal: object=None):
+        text = self.source[self.start:self.current]
+        self.tokens.append(Token(token_type, text, literal, self.line))
+
+    def string(self):
+        while self.peek() != '"' and not self.is_at_end():
+            self.advance()
+        if self.is_at_end():
+            raise ValueError(f"Unterminated string in line: {self.line}")
+        self.advance()
+
+        value = self.source[(self.start + 1):(self.current - 1)]
+        self.add_token(TokenType.STRING, value)
+
+    def number(self):
+        while self.peek().isdigit():
+            self.advance()
+        
+        if (self.peek() == "." and self.peek_next().isdigit):
+            self.advance()
+            while self.peek().isdigit():
+                self.advance()
+        self.add_token(TokenType.NUMBER, float(self.source[self.start:self.current]))
+
+    def identifier(self):
+        while self.peek().isalnum():
+            self.advance()
+        key = self.source[self.start:self.current]
+        token_type = keywords.get(key)
+
+        if token_type is None:
+            token_type = TokenType.IDENTIFIER
+        self.add_token(token_type)
+
+@dataclass
+class BinaryExpr:
+    left: Expr
+    operator: Token
+    right: Expr
+
+    def accept(self, visitor: ExprVisitor) -> object:
+        return visitor.visit_binary_expr(self)
+
+@dataclass
+class UnaryExpr:
+    operator: Token
+    right: Expr
+
+    def accept(self, visitor: ExprVisitor) -> object:
+        return visitor.visit_unary_expr(self)
+
+@dataclass
+class LiteralExpr:
+    value: object
+
+    def accept(self, visitor: ExprVisitor) -> object:
+        return visitor.visit_literal_expr(self)
+    
+@dataclass
+class GroupExpr:
+    expressions: List[Expr]
+
+    def accept(self, visitor: ExprVisitor) -> object:
+        return visitor.visit_group_expr(self)
+    
+    def __iter__(self):
+        return iter(self.expressions)
+
+Expr = BinaryExpr | UnaryExpr | LiteralExpr | GroupExpr
+
+class ExprVisitor:
+    @abstractmethod
+    def visit_literal_expr(self, expr: LiteralExpr) -> object:
+        pass
+
+    @abstractmethod
+    def visit_unary_expr(self, expr: UnaryExpr) -> object:
+        pass
+
+    @abstractmethod
+    def visit_binary_expr(self, expr: BinaryExpr) -> object:
+        pass
+
+    @abstractmethod
+    def visit_group_expr(self, expr: GroupExpr) -> object:
+        pass
+
 class Parser:
     def __init__(self, tokens: List[Token]):
         self.tokens = tokens
         self.current = 0
 
-    def parse(self) -> List[Tuple]:
+    def parse(self):
         expressions = []
         while not self.is_at_end():
-            expressions.append(self.expression())
-        return expressions
-
-    def expression(self):
-        # (OPERATOR OPERAND OPERAND ...)
+            if self.check(TokenType.LEFT_PAREN):
+                expressions.append(self.expression())
+            else:
+                raise RuntimeError(f"Unexpected token {self.peek().lexeme} in line: {self.peek().line}. Expect expression to be enclosed in parentheses.")
+        return GroupExpr(expressions)
+    
+    def expression(self) -> Expr:
+        if self.match(TokenType.NUMBER):
+            return LiteralExpr(self.previous().literal)
+        if self.match(TokenType.MINUS):
+            operator = self.previous()
+            right = self.expression()
+            return UnaryExpr(operator, right)
         if self.match(TokenType.LEFT_PAREN):
-            operator = self.consume(TokenType.OPERATOR, TokenType.MATH_FUNC)
-            operands = []
+            operator = self.peek()
+            self.advance()
+            left = self.expression()
             while not self.check(TokenType.RIGHT_PAREN):
-                # recursive to represent a nested block
-                operands.append(self.expression())
-            self.consume(TokenType.RIGHT_PAREN)
-            return (operator.literal, operands)
-        elif self.match(TokenType.NUMBER):
-            return float(self.prev().literal)
-        elif self.match(TokenType.CONSTANT):
-            return self.prev().literal
-    
-    def advance(self) -> Token:
-        self.current += 1
-        return self.prev()
-    
+                right = self.expression()
+                left = BinaryExpr(left, operator, right)
+            self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.")
+            return left 
+        raise RuntimeError(f"Expected Expression: {self.peek().lexeme}")
+
+    def is_at_end(self) -> bool:
+        return self.peek().token_type == TokenType.EOF
+
     def peek(self) -> Token:
         return self.tokens[self.current]
     
-    def prev(self) -> Token:
+    def previous(self) -> Token:
         return self.tokens[self.current - 1]
-
-    def match(self, token_type) -> bool:
-        if self.check(token_type):
-            self.advance()
-            return True
-        return False
+    
+    def advance(self) -> Token:
+        if not self.is_at_end():
+            self.current += 1
+        return self.previous()
 
     def check(self, token_type: TokenType) -> bool:
+        if self.is_at_end():
+            return False
         return self.peek().token_type == token_type
-    
-    def consume(self, *token_types) -> Token:
+
+    def match(self, *token_types: TokenType) -> bool:
         for t in token_types:
             if self.check(t):
-                return self.advance()
-    
-    def is_at_end(self) -> bool:
-        return self.peek().token_type == TokenType.EOF
-    
-def evaluate(ast):
-    if isinstance(ast, tuple):
-        operator_map = {
-            "+": lambda x, y: x + y,
-            "-": lambda x, y: x - y,
-            "*": lambda x, y: x * y,
-            "/": lambda x, y: x / y
-        }
-        operator, operands = ast
-        if operator in operator_map:
-            func = operator_map[operator]
-            return reduce(func, (evaluate(op) for op in operands))
-        elif operator == "sqrt":
-            if len(operands) > 1:
-                raise ValueError("Square root can only compute one operand.")
-            if operands[0] == 2:
-                return Constant.SQRT_2.value
-            return sqrt(evaluate(operands[0]))
-        elif operator == "pow":
-            if len(operands) < 2:
-                return evaluate(operands[0])
-            if len(operands) > 4:
-                raise ValueError("Amount of chained power cannot exceed 4.")
-            return reduce(lambda x, y: x**y, (evaluate(op) for op in operands))
-        elif operator == "exp":
-            if len(operands) > 1:
-                raise ValueError("Exponential function can only compute one operand.")
-            return Constant.EULER_NUMBER.value**evaluate(operands[0])
-        else:
-            raise RuntimeError(f"Unknown operator: {operator}")
-    else:
-        return ast
-    
-def reduce(function, sequence):
-    it = iter(sequence)
-    res = next(it)
-    for element in it:
-        res = function(res, element)
-    return res
+                self.advance()
+                return True
+        return False
 
-def sqrt(x, tolerance=1e-15):
-    if x < 0:
-        raise ValueError("Cannot compute the square root of a negative number.")
-    low, high = 0, x
-    guess = (low + high) / 2
-    while abs(guess * guess - x) > tolerance:
-        if guess * guess < x:
-            low = guess
-        else:
-            high = guess
-        guess = (low + high) / 2
-    return round(guess, 10)
+    def consume(self, token_type: TokenType, msg: str) -> Token:
+        if self.check(token_type):
+            return self.advance()
+        raise RuntimeError(msg)
+    
+class Interpreter(ExprVisitor):
+    def interpret(self, expr: Expr) -> object:
+        return expr.accept(self)
+    
+    def visit_literal_expr(self, expr: LiteralExpr) -> object:
+        return expr.value
+    
+    def visit_unary_expr(self, expr: UnaryExpr) -> object:
+        right = expr.right.accept(self)
+        if expr.operator.lexeme == "-":
+            return -right
+        raise RuntimeError(f"Unknown operator {expr.operator.lexeme} in line {expr.operator.line}")
+
+    def visit_binary_expr(self, expr: BinaryExpr) -> object:
+        left = expr.left.accept(self)
+        right = expr.right.accept(self)
+        if expr.operator.lexeme == "+":
+            return left + right
+        elif expr.operator.lexeme == "-":
+            return left - right
+        elif expr.operator.lexeme == "*":
+            return left * right
+        elif expr.operator.lexeme == "/":
+            return left / right
+        raise RuntimeError(f"Unknown operator {expr.operator.lexeme} in line {expr.operator.line}")
+
+    def visit_group_expr(self, expr: GroupExpr) -> object:
+        return [e.accept(self) for e in expr.expressions]
+    
+def print_ast(expression: Expr, level=0):
+    if isinstance(expression, BinaryExpr):
+        print("  "*level, expression.operator)
+        print_ast(expression.left, level + 1)
+        print_ast(expression.right, level + 1)
+    elif isinstance(expression, UnaryExpr):
+        print("  "*level, expression.operator)
+        print_ast(expression.right, level + 1)
+    elif isinstance(expression, LiteralExpr):
+        print("  "*level, str(expression))
+
+def ast_depth(expression: Expr):
+    if isinstance(expression, BinaryExpr):
+        return max(ast_depth(expression.left), ast_depth(expression.right)) + 1
+    elif isinstance(expression, UnaryExpr):
+        return ast_depth(expression.right) + 1
+    elif isinstance(expression, LiteralExpr):
+        return 1
 
 def main():
     if len(sys.argv) < 2:
@@ -232,19 +309,31 @@ def main():
     if extension != "yip":
         raise NameError(f"Invalid file: {fpath}")
 
-    file = open(fpath, "r", encoding="utf-8").read()
-    tokens = Lexer(file.lower())
+    source = open(fpath, "r", encoding="utf-8").read()
+    print(source)
+    print()
+
+    tokens = Lexer(source)
     tokens = tokens.tokenize()
-    
     for token in tokens:
         print(token)
+    print()
 
-    temp = Parser(tokens) 
-    temp = temp.parse()
-    print("Abstract Syntax Tree: ", temp)
+    parser = Parser(tokens)
+    expression = parser.parse()
+    print(expression)
 
-    result = list(map(evaluate, temp))
-    print("Output:", result)
+    print()
+
+    for expr in expression:
+        print(f"Max Depth: {ast_depth(expr)}")
+        print_ast(expr)
+
+    print()
+
+    interpreter = Interpreter()
+    result = interpreter.interpret(expression)
+    print("Evaluation result: ", result)
 
 if __name__ == "__main__":
     main()
