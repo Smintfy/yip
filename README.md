@@ -2,53 +2,38 @@
 yip is a toy interpreted programming language.
 
 ### Example
-1. Simple basic operations
+1. Basic operations
+   
     ```lisp
     (+ 2 3)
 
-    ;output 5
+    ; output 5
     ```
-
-2. Complex basic operations
+2. Equality
+   
     ```lisp
-    (+ (- 5 3)
-    (+ 4.2 -2)
-    (- (+ 7 (- 8.5 3.1)) (+ 3 2.8))
-    (- -4 (- 1 0.5))
-    (+ 2.5 (- 1 1.5))
-    (+ (- (+ 6 -3) (- 9 1.2)) 2)
-    (+ (* 2
-        (- 3
-            (/ 8 4.0)))
-    (/ (+ 5.5
-            (* 2
-                (- 10 3)))
-        7)
-    (- 15
-        (* 2.5
-            (/ 20
-                (+ 3
-                (- 10 5)))))
-    (* -1.2
-        (+ 4
-            (/ 6
-                (- 9 3))))))
-    ```
-    ```shell
-    python main.py test/test.yip
+    (== false true)
 
-    # output 13.035714285714285
+    ; output false
     ```
+
+3. Comparison
+   
+    ```lisp
+    (> 7 5)
+
+    ; output true
+    ``` 
 
 ### Roadmap
 
 1. Lexical Analysis
-    - [ ] Token Type
+    - [x] Token Type
         - try using enum or mapping
-    - [ ] Tokenization
+    - [x] Tokenization
         - [x] Operator
         - [x] Number
-        - [ ] Keyword
+        - [x] Keyword
 
 2. Parsing
     - [ ] Generate AST
@@ -59,7 +44,7 @@ yip is a toy interpreted programming language.
     - [ ] Math experssion
         - [x] Real numbers
         - [x] Basic operation
-        - [x] Constant
+        - [ ] Constant
             - like pi, e, etc
             - only pi and e
         - [ ] Math function
@@ -67,7 +52,7 @@ yip is a toy interpreted programming language.
         - [ ] Complex math
             - [ ] imaginary number
     - [ ] Logical expression
-        - [ ] Where input is already set by the user
+        - [x] Where input is already set by the user
             - e.g A = True B = False
         - [ ] Generate a truth table
             - generate all possible input. 2^N
