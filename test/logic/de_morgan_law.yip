@@ -1,0 +1,31 @@
+; De Morgan Law
+; ¬ (P ∨ Q) ⇔ (¬ P) ∧ (¬ Q)
+; ¬ (P ∧ Q) ⇔ (¬ P) ∨ (¬ Q)
+
+
+; ¬ (P ∨ Q) ⇔ (¬ P) ∧ (¬ Q)
+; 0 0
+(== (!(or false false)) (and (!false) (!false)))
+
+; 0 1
+(== (!(or false true)) (and (!false) (!true)))
+
+; 1 0
+(== (!(or true false)) (and (!true) (!false)))
+
+; 1 1
+(== (!(or true true)) (and (!true) (!true)))
+
+
+; ¬ (P ∧ Q) ⇔ (¬ P) ∨ (¬ Q)
+; 0 0
+(== (!(and false false)) (or (!false) (!false)))
+
+; 0 1
+(== (!(and false true)) (or (!false) (!true)))
+
+; 1 0
+(== (!(and true false)) (or (!true) (!false)))
+
+; 1 1
+(== (!(and true true)) (or (!true) (!true)))

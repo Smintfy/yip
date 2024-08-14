@@ -38,6 +38,9 @@ class TokenType(Enum):
     ELSE = "ELSE"
     TRUE = "TRUE"
     FALSE = "FALSE"
+    OR = "OR"
+    AND = "AND"
+    NOT = "NOT"
     NONE = "NONE"
 
     # End-of-line
@@ -51,7 +54,10 @@ keywords = {
     "if": TokenType.IF,
     "else": TokenType.ELSE,
     "true": TokenType.TRUE,
-    "false": TokenType.FALSE
+    "false": TokenType.FALSE,
+    "or": TokenType.OR,
+    "and": TokenType.AND,
+    "not": TokenType.NOT
 }
 
 
@@ -260,34 +266,38 @@ class Parser:
     def parse(self) -> List[Expr]:
         expressions = []
         while not self.is_at_end():
-            expressions.append(self.expression())
+            expressions.append(self.expect_paren())
         return Group(expressions)
+   
+    def expect_paren(self) -> Expr:
+        self.consume(TokenType.LEFT_PAREN, "Expect '(' before expression.")
+        expr = self.expression()
+        self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.")
+        return expr
 
     def expression(self) -> Expr:
         return self.binary()
-
+    
     def binary(self) -> Expr:
-        if self.match(TokenType.LEFT_PAREN):
-            operator = self.advance()
-            if operator.token_type in [TokenType.MINUS, TokenType.BANG] and ((self.tokens[self.current + 1].token_type == TokenType.RIGHT_PAREN) or (self.peek().token_type == TokenType.LEFT_PAREN)):
-                right = self.expression()
-                self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.")
-                return Unary(operator, right)
-            left = self.expression()
+        if self.match(TokenType.PLUS, TokenType.MINUS, TokenType.STAR, TokenType.SLASH, 
+                      TokenType.BANG_EQUAL, TokenType.EQUAL_EQUAL, TokenType.AND, TokenType.OR,
+                      TokenType.LESS, TokenType.LESS_EQUAL, TokenType.GREATER, TokenType.GREATER_EQUAL):
+            operator = self.previous()
+            left = self.unary()
             while not self.check(TokenType.RIGHT_PAREN) and not self.is_at_end():
-                right = self.expression()
+                right = self.unary()
                 left = Binary(left, operator, right)
-            self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.")
             return left
         return self.unary()
 
+    #TODO: allow single unary expression like (-3) or (-(expr))
     def unary(self) -> Expr:
         if self.match(TokenType.MINUS, TokenType.BANG):
             operator = self.previous()
             right = self.unary()
             return Unary(operator, right)
         return self.primary()
-
+   
     def primary(self) -> Expr:
         if self.match(TokenType.TRUE):
             return Literal(True)
@@ -299,7 +309,7 @@ class Parser:
             expr = self.expression()
             self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.")
             return expr
-        raise RuntimeError(f"Expect Expression: {self.peek().lexeme}")
+        raise RuntimeError(f"Unknown Expression: {self.peek().lexeme}")
 
     def match(self, *types: TokenType) -> bool:
         for type in types:
@@ -381,11 +391,14 @@ class Interpreter(ExprVisitor):
                 if expr.operator.token_type == TokenType.PLUS:
                     if isinstance(left, float) and isinstance(right, float):
                         return left + right
-                    if isinstance(left, str) and isinstance(right, str):
+                    elif isinstance(left, str) and isinstance(right, str):
                         return left + right
+                    else:
+                        raise TypeError(f"Mismatch operation type between {type(left)} and {type(right)}")
             case TokenType.MINUS:
                 self.check_number_operands(left, expr.operator, right)
                 return left - right
+            # TODO: multiply string with a number
             case TokenType.STAR:
                 self.check_number_operands(left, expr.operator, right)
                 return left * right
@@ -396,6 +409,13 @@ class Interpreter(ExprVisitor):
                 return self.is_equal(left, right)
             case TokenType.BANG_EQUAL:
                 return not self.is_equal(left, right)
+            case TokenType.OR:
+                return (self.is_truthy(left) or self.is_truthy(right))
+            case TokenType.AND:
+                return (self.is_truthy(left) and self.is_truthy(right))
+            case TokenType.NOT:
+                return not self.is_equal(left, right)
+            # TODO: allow grouped comparison such as (< a b c ...)
             case TokenType.LESS:
                 self.check_number_operands(left, expr.operator, right)
                 return left < right

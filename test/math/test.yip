@@ -1,0 +1,8 @@
+;should return -1.2
+(- 2 3.2)
+
+;should return -7
+(- 2 3 (+ 2 3 (- -2 -3)))
+
+;should return -5
+(-(+ 2 3))
