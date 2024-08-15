@@ -1,7 +1,7 @@
 from __future__ import annotations
-from abc import ABC, abstractmethod
 from typing import List, Any
 from enum import Enum
+import argparse
 import sys
 
 
@@ -32,7 +32,7 @@ class TokenType(Enum):
 
     # Keywords
     SET = "SET"
-    PUT = "PUT"
+    WRITE = "WRITE"
     PROC = "PROC"
     IF = "IF"
     ELSE = "ELSE"
@@ -40,7 +40,6 @@ class TokenType(Enum):
     FALSE = "FALSE"
     OR = "OR"
     AND = "AND"
-    NOT = "NOT"
     NONE = "NONE"
 
     # End-of-line
@@ -49,15 +48,14 @@ class TokenType(Enum):
 
 keywords = {
     "set": TokenType.SET,
-    "put": TokenType.PUT,
+    "write": TokenType.WRITE,
     "proc": TokenType.PROC,
     "if": TokenType.IF,
     "else": TokenType.ELSE,
     "true": TokenType.TRUE,
     "false": TokenType.FALSE,
     "or": TokenType.OR,
-    "and": TokenType.AND,
-    "not": TokenType.NOT
+    "and": TokenType.AND
 }
 
 
@@ -201,23 +199,14 @@ class Lexer:
             self.advance()
 
 
-class ExprVisitor(ABC):
-    @abstractmethod
-    def visit_literal_expr(self, expr: Expr) -> Any: raise NotImplementedError
-
-    @abstractmethod
-    def visit_unary_expr(self, expr: Expr) -> Any: raise NotImplementedError
-
-    @abstractmethod
-    def visit_binary_expr(self, expr: Expr) -> Any: raise NotImplementedError
-
-    @abstractmethod
-    def visit_group_expr(self, expr: Expr) -> Any: raise NotImplementedError
+class ExprVisitor:
+    def visit_literal_expr(self, expr: Expr): raise NotImplementedError
+    def visit_unary_expr(self, expr: Expr): raise NotImplementedError
+    def visit_binary_expr(self, expr: Expr): raise NotImplementedError
 
 
-class Expr(ABC):
-    @abstractmethod
-    def accept(visitor: ExprVisitor) -> Any: raise NotImplementedError
+class Expr:
+    def accept(visitor: ExprVisitor): raise NotImplementedError
 
 
 class Binary(Expr):
@@ -247,15 +236,29 @@ class Literal(Expr):
         return visitor.visit_literal_expr(self)
     
 
-class Group(Expr):
-    def __init__(self, expressions: List[Expr]):
-        self.expressions = expressions
+class StmtVisitor:
+    def visit_expression_stmt(self, stmt: Stmt): raise NotImplementedError
+    def visit_print_stmt(self, stmt: Stmt): raise NotImplementedError
 
-    def accept(self, visitor: ExprVisitor):
-        return visitor.visit_group_expr(self)
+
+class Stmt:
+    def accept(visitor: StmtVisitor): raise NotImplementedError
+
+
+class Expression(Stmt):
+    def __init__(self, expression: Expr) -> None:
+        self.expression = expression
+
+    def accept(self, visitor: StmtVisitor) -> None:
+        return visitor.visit_expression_stmt(self)
     
-    def __iter__(self):
-        return iter(self.expressions)
+
+class Print(Stmt):
+    def __init__(self, expression: Expr) -> None:
+        self.expression = expression
+
+    def accept(self, visitor: StmtVisitor) -> None:
+        return visitor.visit_print_stmt(self)
 
 
 class Parser:
@@ -263,17 +266,27 @@ class Parser:
         self.tokens = tokens
         self.current = 0
 
-    def parse(self) -> List[Expr]:
-        expressions = []
+    def parse(self) -> List[Stmt]:
+        statements = []
         while not self.is_at_end():
-            expressions.append(self.expect_paren())
-        return Group(expressions)
-   
-    def expect_paren(self) -> Expr:
+            statements.append(self.statement())
+        return statements
+    
+    def statement(self) -> Stmt:
         self.consume(TokenType.LEFT_PAREN, "Expect '(' before expression.")
+        if self.match(TokenType.WRITE):
+            return self.print_statement()
+        return self.expression_statement()
+    
+    def print_statement(self) -> Stmt:
         expr = self.expression()
         self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.")
-        return expr
+        return Print(expr)
+   
+    def expression_statement(self) -> Stmt:
+        expr = self.expression()
+        self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.")
+        return Expression(expr)
 
     def expression(self) -> Expr:
         return self.binary()
@@ -343,9 +356,28 @@ class Parser:
         raise RuntimeError(message)
 
 
+class Interpreter(ExprVisitor, StmtVisitor):
+    def __init__(self, eval=False) -> None:
+        self.eval = eval
 
-class Interpreter(ExprVisitor):
-    def interpret(self, expr: Expr) -> Any:
+    def interpret(self, statements: List[Stmt]):
+        if self.eval:
+            results = []
+            for stmt in statements:
+                if isinstance(stmt, Expression):
+                    results.append(self.execute(stmt))
+                else:
+                    self.execute(stmt)
+            return results
+        for stmt in statements:
+            self.execute(stmt)
+
+    def execute(self, stmt: Stmt):
+        if self.eval:
+            return stmt.accept(self)
+        stmt.accept(self)
+
+    def evaluate(self, expr: Expr):
         return expr.accept(self)
     
     @staticmethod
@@ -355,6 +387,16 @@ class Interpreter(ExprVisitor):
     @staticmethod
     def is_equal(left: Any, right: Any):
         return left == right
+    
+    @staticmethod
+    def stringify(obj: Any) -> str:
+        if isinstance(obj, str):
+            return obj
+        elif obj is None:
+            return 'None'
+        elif isinstance(obj, bool):
+            return str(obj).lower()
+        return str(obj)
     
     def check_number_operands(self, left: Any, operator: Token, right: Any):
         if isinstance(left, float) and isinstance(right, float):
@@ -366,11 +408,23 @@ class Interpreter(ExprVisitor):
             return
         raise RuntimeError(operator,"Operands must be type of number")
     
-    def visit_literal_expr(self, expr: Literal) -> Any:
+    def visit_expression_stmt(self, stmt: Expression):
+        if self.eval:
+            value = self.evaluate(stmt.expression)
+            return value
+        self.evaluate(stmt.expression)
+        return None
+    
+    def visit_print_stmt(self, stmt: Print):
+        value = self.evaluate(stmt.expression)
+        print(self.stringify(value))
+        return None
+    
+    def visit_literal_expr(self, expr: Literal):
         return expr.value
     
-    def visit_unary_expr(self, expr: Unary) -> Any:
-        right = expr.right.accept(self)
+    def visit_unary_expr(self, expr: Unary):
+        right = self.evaluate(expr.right)
         operator_type = expr.operator.token_type
 
         match operator_type:
@@ -381,9 +435,9 @@ class Interpreter(ExprVisitor):
                 return not self.is_truthy(right)
         raise RuntimeError(f"Unknown operator {expr.operator.lexeme} in line {expr.operator.line}")
 
-    def visit_binary_expr(self, expr: Binary) -> Any:
-        left = expr.left.accept(self)
-        right = expr.right.accept(self)
+    def visit_binary_expr(self, expr: Binary):
+        left = self.evaluate(expr.left)
+        right = self.evaluate(expr.right)
         operator_type = expr.operator.token_type
 
         match operator_type:
@@ -413,8 +467,6 @@ class Interpreter(ExprVisitor):
                 return (self.is_truthy(left) or self.is_truthy(right))
             case TokenType.AND:
                 return (self.is_truthy(left) and self.is_truthy(right))
-            case TokenType.NOT:
-                return not self.is_equal(left, right)
             # TODO: allow grouped comparison such as (< a b c ...)
             case TokenType.LESS:
                 self.check_number_operands(left, expr.operator, right)
@@ -429,67 +481,66 @@ class Interpreter(ExprVisitor):
                 self.check_number_operands(left, expr.operator, right)
                 return left >= right
         raise RuntimeError(f"Unknown operator {expr.operator.lexeme} in line {expr.operator.line}")
+    
 
-    def visit_group_expr(self, expr: Group) -> Any:
-        return [e.accept(self) for e in expr.expressions]
+def run(source: str, debug_source=False, tokenize=False, eval=False):
+    if debug_source:
+        print(f"source: {source}")
+
+    tokens = Lexer(source).tokenize()
+    if tokenize:
+        print(f"tokens:", end=' ')
+        for idx, token in enumerate(tokens):
+            if idx == 0:
+                print(token)
+            print(" " * 7, token)
+
+    statements = Parser(tokens).parse()
+    interpreter = Interpreter(eval)
+    if eval:
+        results = interpreter.interpret(statements)
+        if len(results) != 0:
+            print(results)
+        return
+    Interpreter().interpret(statements)
 
 
-def print_ast(expression: Expr, level=0):
-    if isinstance(expression, Binary):
-        print("  "*level, expression.operator)
-        print_ast(expression.left, level + 1)
-        print_ast(expression.right, level + 1)
-    elif isinstance(expression, Unary):
-        print("  "*level, expression.operator)
-        print_ast(expression.right, level + 1)
-    elif isinstance(expression, Literal):
-        print("  "*level, str(expression.value))
+def run_file(fpath: str, debug_source: bool, tokenize: bool, eval: bool):
+    source = open(fpath, "r", encoding="utf-8").read()
+    run(source, debug_source, tokenize, eval)
+    
 
-
-def ast_depth(expression: Expr):
-    if isinstance(expression, Binary):
-        return max(ast_depth(expression.left), ast_depth(expression.right)) + 1
-    elif isinstance(expression, Unary):
-        return ast_depth(expression.right) + 1
-    elif isinstance(expression, Literal):
-        return 1
+def run_interactive():
+    while True:
+        line = input(">>> ")
+        if line == "quit":
+            break
+        else:
+            run(line, eval=True)
 
 
 def main():
-    if len(sys.argv) < 2:
-        raise ValueError("File path is not provided.")
+    if len(sys.argv) >= 2:
+        # TODO: clean these up (make it nicer) before it's too late.
+        arg_parser = argparse.ArgumentParser()
+        arg_parser.add_argument("--source", action=argparse.BooleanOptionalAction)
+        arg_parser.add_argument("--tokenize", action=argparse.BooleanOptionalAction)
+        arg_parser.add_argument("--eval", action=argparse.BooleanOptionalAction)
+        arg_parser.add_argument("file_path")
+        args = arg_parser.parse_args()
 
-    fpath = sys.argv[1]
-    extension = fpath.split(".")[-1]
-    
-    if extension != "yip":
-        raise NameError(f"Invalid file: {fpath}")
-
-    source = open(fpath, "r", encoding="utf-8").read()
-    print(source)
-    print()
-
-    tokens = Lexer(source)
-    tokens = tokens.tokenize()
-    for token in tokens:
-        print(token)
-    print()
-
-    parser = Parser(tokens)
-    expression = parser.parse()
-    print(expression)
-
-    print()
-
-    for expr in expression:
-        print(f"Max Depth: {ast_depth(expr)}")
-        print_ast(expr)
-
-    print()
-
-    interpreter = Interpreter()
-    result = interpreter.interpret(expression)
-    print("Evaluation result: ", result)
+        fpath = args.file_path
+        extension = fpath.split(".")[-1]
+        
+        if extension != "yip":
+            raise NameError(f"Invalid file: {fpath}")
+        
+        debug_source = args.source
+        tokenize = args.tokenize
+        eval = args.eval
+        run_file(fpath, debug_source, tokenize, eval)
+    else:
+        run_interactive()
 
 if __name__ == "__main__":
     main()
