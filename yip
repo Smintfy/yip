@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+script_dir=$(dirname "$0")
+python3 ${script_dir}/yip.py $@
