@@ -237,6 +237,14 @@ class Literal(Expr):
         return visitor.visit_literal_expr(self)
     
 
+class Variable(Expr):
+    def __init__(self, name: Token):
+        self.name = name
+
+    def accept(self, visitor: ExprVisitor):
+        return visitor.visit_variable_expr(self)
+    
+
 class StmtVisitor:
     def visit_expression_stmt(self, stmt: Stmt): raise NotImplementedError
     def visit_print_stmt(self, stmt: Stmt): raise NotImplementedError
@@ -256,8 +264,8 @@ class Expression(Stmt):
     
 
 class Print(Stmt):
-    def __init__(self, expression: Expr):
-        self.expression = expression
+    def __init__(self, expressions: List[Expr]):
+        self.expressions = expressions
 
     def accept(self, visitor: StmtVisitor):
         return visitor.visit_print_stmt(self)
@@ -300,9 +308,11 @@ class Parser:
         return Set(name, initializer)
     
     def print_statement(self) -> Stmt:
-        expr = self.expression()
+        expressions = []
+        while not self.check(TokenType.RIGHT_PAREN):
+            expressions.append(self.expression())
         self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.")
-        return Print(expr)
+        return Print(expressions)
    
     def expression_statement(self) -> Stmt:
         expr = self.expression()
@@ -339,6 +349,8 @@ class Parser:
             return Literal(False)
         elif self.match(TokenType.NUMBER, TokenType.STRING):
             return Literal(self.previous().literal)
+        elif self.match(TokenType.IDENTIFIER):
+            return Variable(self.previous())
         elif self.match(TokenType.LEFT_PAREN):
             expr = self.expression()
             self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.")
@@ -377,8 +389,23 @@ class Parser:
         raise RuntimeError(message)
 
 
+class Environment:
+    def __init__(self):
+        self.values = {}
+
+    def set(self, name: str, value: Any):
+        self.values[name] = value
+
+    def get(self, name: Token):
+        try:
+            return self.values[name.lexeme]
+        except KeyError:
+            raise RuntimeError(name, f"Undefined variable '{name.lexeme}'.")
+
+
 class Interpreter(ExprVisitor, StmtVisitor):
-    def __init__(self, eval=False) -> None:
+    def __init__(self, eval=False):
+        self.environment = Environment()
         self.eval = eval
 
     def interpret(self, statements: List[Stmt]):
@@ -413,6 +440,8 @@ class Interpreter(ExprVisitor, StmtVisitor):
             return 'None'
         elif isinstance(obj, bool):
             return str(obj).lower()
+        elif isinstance(obj, float):
+            return str(int(obj)) if obj.is_integer() else str(obj)
         return str(obj)
     
     def check_number_operands(self, left: Any, operator: Token, right: Any):
@@ -427,9 +456,18 @@ class Interpreter(ExprVisitor, StmtVisitor):
         return self.evaluate(stmt.expression) if self.eval else None
     
     def visit_print_stmt(self, stmt: Print):
-        value = self.evaluate(stmt.expression)
-        print(self.stringify(value))
+        values = [self.stringify(self.evaluate(expr)) for expr in stmt.expressions]
+        print("".join(values))
         return None
+    
+    def visit_set_stmt(self, stmt: Set):
+        if stmt.initializer is not None:
+            value = self.evaluate(stmt.initializer)
+        self.environment.set(stmt.name.lexeme, value)
+        return None
+
+    def visit_variable_expr(self, expr: Variable):
+        return self.environment.get(expr.name)
     
     def visit_literal_expr(self, expr: Literal):
         return expr.value
@@ -511,9 +549,9 @@ class AstPrinter:
         elif isinstance(stmt, Print):
             self._print_expr(stmt.expression, depth + 1)
         elif isinstance(stmt, Set):
-            print(indent + "   ", f"Name={stmt.name}")
+            print(indent + "  ", f"Name={stmt.name}")
             self._print_expr(stmt.initializer, depth + 1, "set")
-        print(indent + "),")
+        print(indent + ")")
 
     def _print_expr(self, expr: Expr, depth=0, instance=None):
         # TODO: idk, improve the indentation? I mean it's good already. (If not lazy)
@@ -530,6 +568,10 @@ class AstPrinter:
             print(indent + "  ", f"Op={expr.operator.token_type.value}({expr.operator.lexeme})")
             print(indent + "  ", f"Right=", end="")
             self._print_expr(expr.right, depth + 2)
+            print(")", end="")
+        elif isinstance(expr, Variable):
+            print(indent + f"Variable(") if depth == 1 else print(f"Unary(")
+            print(indent + "  ", f"Name={expr.name}")
             print(")", end="")
         elif isinstance(expr, Binary):
             print(indent + f"Binary(") if depth == 1 else print(f"Binary(")

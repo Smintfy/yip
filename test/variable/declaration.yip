@@ -1,0 +1,4 @@
+(set a 5)
+(set b 7)
+
+(write "Result: " (+ a b))
