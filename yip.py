@@ -41,6 +41,7 @@ class TokenType(Enum):
     OR = "OR"
     AND = "AND"
     NONE = "NONE"
+    WHILE = "WHILE"
 
     # End-of-line
     EOF = "EOF"
@@ -55,7 +56,8 @@ keywords = {
     "true": TokenType.TRUE,
     "false": TokenType.FALSE,
     "or": TokenType.OR,
-    "and": TokenType.AND
+    "and": TokenType.AND,
+    "while": TokenType.WHILE
 }
 
 
@@ -244,6 +246,7 @@ class StmtVisitor:
     def visit_write_stmt(self, stmt: Stmt): raise NotImplementedError
     def visit_set_stmt(self, stmt: Stmt): raise NotImplementedError
     def visit_if_stmt(self, stmt: Stmt): raise NotImplementedError
+    def visit_while_stmt(self, stmt: Stmt): raise NotImplementedError
 
 
 class Stmt:
@@ -298,6 +301,15 @@ class Condition(Stmt):
         ...
 
 
+class While(Stmt):
+    def __init__(self, condition: Expr, body: Stmt | List[Stmt]):
+        self.condition = condition
+        self.body = body
+
+    def accept(self, visitor: StmtVisitor):
+        return visitor.visit_while_stmt(self)
+
+
 class Parser:
     """Parse tokens.
 
@@ -321,6 +333,8 @@ class Parser:
             return self.set_statement()
         if self.match(TokenType.WRITE):
             return self.write_statement()
+        if self.match(TokenType.WHILE):
+            return self.while_statement()
         if self.match(TokenType.IF):
             return self.if_statement()
         return self.expression_statement()
@@ -348,7 +362,15 @@ class Parser:
             else_branch = self.statement()
         self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.")
         return If(condition, branch, else_branch)
-   
+    
+    def while_statement(self) -> Stmt:
+        self.consume(TokenType.LEFT_PAREN, "Expect '(' before condition.")
+        condition = self.expression()
+        self.consume(TokenType.RIGHT_PAREN, "Expect ')' after condition.")
+        body = self.statement()
+        self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.")
+        return While(condition, body)
+
     def expression_statement(self) -> Stmt:
         expr = self.expression()
         self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.")
@@ -414,6 +436,9 @@ class Parser:
 
     def peek(self) -> Token:
         return self.tokens[self.current]
+    
+    def ahead(self) -> Token:
+        return self.tokens[self.current + 1]
 
     def previous(self) -> Token:
         return self.tokens[self.current - 1]
@@ -540,6 +565,11 @@ class Interpreter(ExprVisitor, StmtVisitor):
             self.execute(stmt.branch)
         elif (stmt.else_branch is not None):
             self.execute(stmt.else_branch)
+        return None
+    
+    def visit_while_stmt(self, stmt: While):
+        while (self.is_truthy(self.evaluate(stmt.condition))):
+            self.execute(stmt.body)
         return None
 
     def visit_variable_expr(self, expr: Variable):
@@ -692,6 +722,7 @@ def run(source: str, debug_source=False, tokenize=False, eval=False, ast=False, 
         for token in tokens:
             print(token)
         print()
+        return
 
     statements = Parser(tokens).parse()
     if ast:
