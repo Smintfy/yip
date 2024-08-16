@@ -203,6 +203,7 @@ class ExprVisitor:
     def visit_literal_expr(self, expr: Expr): raise NotImplementedError
     def visit_unary_expr(self, expr: Expr): raise NotImplementedError
     def visit_binary_expr(self, expr: Expr): raise NotImplementedError
+    def visit_variable_expr(self, expr: Expr): raise NotImplementedError
 
 
 class Expr:
@@ -239,6 +240,7 @@ class Literal(Expr):
 class StmtVisitor:
     def visit_expression_stmt(self, stmt: Stmt): raise NotImplementedError
     def visit_print_stmt(self, stmt: Stmt): raise NotImplementedError
+    def visit_set_stmt(self, stmt: Stmt): raise NotImplementedError
 
 
 class Stmt:
@@ -246,19 +248,28 @@ class Stmt:
 
 
 class Expression(Stmt):
-    def __init__(self, expression: Expr) -> None:
+    def __init__(self, expression: Expr):
         self.expression = expression
 
-    def accept(self, visitor: StmtVisitor) -> None:
+    def accept(self, visitor: StmtVisitor):
         return visitor.visit_expression_stmt(self)
     
 
 class Print(Stmt):
-    def __init__(self, expression: Expr) -> None:
+    def __init__(self, expression: Expr):
         self.expression = expression
 
-    def accept(self, visitor: StmtVisitor) -> None:
+    def accept(self, visitor: StmtVisitor):
         return visitor.visit_print_stmt(self)
+    
+
+class Set(Stmt):
+    def __init__(self, name: Token, initializer: Expr):
+        self.name = name
+        self.initializer = initializer
+
+    def accept(self, visitor: StmtVisitor):
+        return visitor.visit_set_stmt(self)
 
 
 class Parser:
@@ -269,14 +280,24 @@ class Parser:
     def parse(self) -> List[Stmt]:
         statements = []
         while not self.is_at_end():
-            statements.append(self.statement())
+            statements.append(self.declaration())
         return statements
     
-    def statement(self) -> Stmt:
+    def declaration(self) -> Stmt:
         self.consume(TokenType.LEFT_PAREN, "Expect '(' before expression.")
+        if self.match(TokenType.SET): return self.set_statement()
+        return self.statement()
+    
+    def statement(self) -> Stmt:
         if self.match(TokenType.WRITE):
             return self.print_statement()
         return self.expression_statement()
+    
+    def set_statement(self) -> Stmt:
+        name = self.consume(TokenType.IDENTIFIER, "Expect variable name.")
+        initializer = self.expression()
+        self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.")
+        return Set(name, initializer)
     
     def print_statement(self) -> Stmt:
         expr = self.expression()
@@ -361,21 +382,17 @@ class Interpreter(ExprVisitor, StmtVisitor):
         self.eval = eval
 
     def interpret(self, statements: List[Stmt]):
-        if self.eval:
-            results = []
-            for stmt in statements:
-                if isinstance(stmt, Expression):
-                    results.append(self.execute(stmt))
-                else:
-                    self.execute(stmt)
-            return results
+        results = []
         for stmt in statements:
-            self.execute(stmt)
+            if self.eval and isinstance(stmt, Expression):
+                results.append(self.execute(stmt))
+            else:
+                self.execute(stmt)
+        return results if self.eval else None
 
     def execute(self, stmt: Stmt):
-        if self.eval:
-            return stmt.accept(self)
-        stmt.accept(self)
+        statement = stmt.accept(self)
+        return statement if self.eval is True else None
 
     def evaluate(self, expr: Expr):
         return expr.accept(self)
@@ -399,21 +416,15 @@ class Interpreter(ExprVisitor, StmtVisitor):
         return str(obj)
     
     def check_number_operands(self, left: Any, operator: Token, right: Any):
-        if isinstance(left, float) and isinstance(right, float):
-            return
+        if isinstance(left, float) and isinstance(right, float): return
         raise RuntimeError(operator,"Operands must be a type of number")
     
     def check_number_operand(self, operator: Token, right: Any):
-        if isinstance(right, float):
-            return
+        if isinstance(right, float): return
         raise RuntimeError(operator,"Operands must be type of number")
     
     def visit_expression_stmt(self, stmt: Expression):
-        if self.eval:
-            value = self.evaluate(stmt.expression)
-            return value
-        self.evaluate(stmt.expression)
-        return None
+        return self.evaluate(stmt.expression) if self.eval else None
     
     def visit_print_stmt(self, stmt: Print):
         value = self.evaluate(stmt.expression)
@@ -481,42 +492,94 @@ class Interpreter(ExprVisitor, StmtVisitor):
                 self.check_number_operands(left, expr.operator, right)
                 return left >= right
         raise RuntimeError(f"Unknown operator {expr.operator.lexeme} in line {expr.operator.line}")
-    
 
-def run(source: str, debug_source=False, tokenize=False, eval=False):
+
+class AstPrinter:
+    def print(self, statements: List[Stmt]):
+        print("Abstract Syntax Tree:")
+        for stmt in statements:
+            self._print_stmt(stmt)
+        print()
+
+    def _print_stmt(self, stmt: Stmt, depth=0):
+        indent = "   " * depth
+        stmt_type = type(stmt).__name__
+        print(indent + f"{stmt_type}(")
+    
+        if isinstance(stmt, Expression):
+            self._print_expr(stmt.expression, depth + 1)
+        elif isinstance(stmt, Print):
+            self._print_expr(stmt.expression, depth + 1)
+        elif isinstance(stmt, Set):
+            print(indent + "   ", f"Name={stmt.name}")
+            self._print_expr(stmt.initializer, depth + 1, "set")
+        print(indent + "),")
+
+    def _print_expr(self, expr: Expr, depth=0, instance=None):
+        # TODO: idk, improve the indentation? I mean it's good already. (If not lazy)
+        indent = "  " * depth
+
+        if isinstance(expr, Literal):
+            if instance == "set":
+                print(indent, f"Initializer=", end="")
+                print(f"Literal(value={expr.value})", end="")
+            else:
+                print(indent + f"Literal(value={expr.value})", end="") if depth == 1 else print(f"Literal(value={expr.value})", end="")
+        elif isinstance(expr, Unary):
+            print(indent + f"Unary(") if depth == 1 else print(f"Unary(")
+            print(indent + "  ", f"Op={expr.operator.token_type.value}({expr.operator.lexeme})")
+            print(indent + "  ", f"Right=", end="")
+            self._print_expr(expr.right, depth + 2)
+            print(")", end="")
+        elif isinstance(expr, Binary):
+            print(indent + f"Binary(") if depth == 1 else print(f"Binary(")
+            print(indent + "  ", f"Op={expr.operator.token_type.value}({expr.operator.lexeme}),")
+            print(indent + "  ", "Left=", end="")
+            self._print_expr(expr.left, depth + 2)
+            print(",")
+            print(indent + "  ", "Right=", end="")
+            self._print_expr(expr.right, depth + 2)
+            print(")", end="")
+
+
+def run(source: str, debug_source=False, tokenize=False, eval=False, ast=False, interactive=False):
     if debug_source:
-        print(f"source: {source}")
+        print("Source:\n", 'START"""\n', source, '\n"""EOF\n', sep="")
 
     tokens = Lexer(source).tokenize()
     if tokenize:
-        print(f"tokens:", end=' ')
-        for idx, token in enumerate(tokens):
-            if idx == 0:
-                print(token)
-            print(" " * 7, token)
+        print("Tokens:")
+        for token in tokens:
+            print(token)
+        print()
 
     statements = Parser(tokens).parse()
+    if ast:
+        printer = AstPrinter()
+        printer.print(statements)
+    
     interpreter = Interpreter(eval)
     if eval:
         results = interpreter.interpret(statements)
-        if len(results) != 0:
-            print(results)
-        return
-    Interpreter().interpret(statements)
+        if results:
+            output = "Results:" if not interactive else ""
+            print(output, results)
+    else:
+        interpreter.interpret(statements)
 
 
-def run_file(fpath: str, debug_source: bool, tokenize: bool, eval: bool):
-    source = open(fpath, "r", encoding="utf-8").read()
-    run(source, debug_source, tokenize, eval)
-    
+def run_file(fpath: str, debug_source: bool, tokenize: bool, eval: bool, ast: bool):
+    with open(fpath, "r", encoding="utf-8") as file:
+        source = file.read()
+    run(source, debug_source, tokenize, eval, ast)
+
 
 def run_interactive():
     while True:
         line = input(">>> ")
-        if line == "quit":
+        if line.lower() == "quit":
             break
-        else:
-            run(line, eval=True)
+        run(line, eval=True, interactive=True)
 
 
 def main():
@@ -526,19 +589,13 @@ def main():
         arg_parser.add_argument("--source", action=argparse.BooleanOptionalAction)
         arg_parser.add_argument("--tokenize", action=argparse.BooleanOptionalAction)
         arg_parser.add_argument("--eval", action=argparse.BooleanOptionalAction)
+        arg_parser.add_argument("--ast", action=argparse.BooleanOptionalAction)
         arg_parser.add_argument("file_path")
         args = arg_parser.parse_args()
 
-        fpath = args.file_path
-        extension = fpath.split(".")[-1]
-        
-        if extension != "yip":
-            raise NameError(f"Invalid file: {fpath}")
-        
-        debug_source = args.source
-        tokenize = args.tokenize
-        eval = args.eval
-        run_file(fpath, debug_source, tokenize, eval)
+        if not args.file_path.endswith(".yip"):
+            raise NameError(f"Invalid file extension: {args.file_path}")
+        run_file(args.file_path, args.source, args.tokenize, args.eval, args.ast)
     else:
         run_interactive()
 
