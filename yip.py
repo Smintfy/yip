@@ -71,6 +71,11 @@ class Token:
 
 
 class Lexer:
+    """Scan source.
+
+    Lexer convert the source by analysing each character and groups
+    them into a tokens.
+    """
     def __init__(self, source: str):
         self.source = source
         self.tokens = []
@@ -88,18 +93,12 @@ class Lexer:
     def scan_token(self):
         char = self.advance()
         match char:
-            case "(":
-                self.add_token(TokenType.LEFT_PAREN)
-            case ")":
-                self.add_token(TokenType.RIGHT_PAREN)
-            case "+":
-                self.add_token(TokenType.PLUS)
-            case "-":
-                self.add_token(TokenType.MINUS)
-            case "*":
-                self.add_token(TokenType.STAR)
-            case "/":
-                self.add_token(TokenType.SLASH)
+            case "(": self.add_token(TokenType.LEFT_PAREN)
+            case ")": self.add_token(TokenType.RIGHT_PAREN)
+            case "+": self.add_token(TokenType.PLUS)
+            case "-": self.add_token(TokenType.MINUS)
+            case "*": self.add_token(TokenType.STAR)
+            case "/": self.add_token(TokenType.SLASH)
             case "!":
                 if self.match("="):
                     self.add_token(TokenType.BANG_EQUAL)
@@ -120,12 +119,9 @@ class Lexer:
                     self.add_token(TokenType.GREATER_EQUAL)
                 else:
                     self.add_token(TokenType.GREATER)
-            case "\n":
-                self.line += 1
-            case ";":
-                self.comment()
-            case '"':
-                self.string()
+            case "\n": self.line += 1
+            case ";": self.comment()
+            case '"': self.string()
             case _:
                 if char.isdigit():
                     self.number()
@@ -149,8 +145,7 @@ class Lexer:
         return self.source[self.current]
     
     def peek_next(self) -> str:
-        if self.current + 1 >= len(self.source):
-            return "\0"
+        if self.current + 1 >= len(self.source): return "\0"
         return self.source[self.current + 1] 
     
     def add_token(self, token_type: TokenType, literal: Any=None):
@@ -159,8 +154,7 @@ class Lexer:
 
     def match(self, expected: str) -> bool:
         if self.is_at_end(): return False
-        if self.peek() != expected:
-            return False
+        if self.peek() != expected: return False
         self.current += 1
         return True
 
@@ -247,8 +241,9 @@ class Variable(Expr):
 
 class StmtVisitor:
     def visit_expression_stmt(self, stmt: Stmt): raise NotImplementedError
-    def visit_print_stmt(self, stmt: Stmt): raise NotImplementedError
+    def visit_write_stmt(self, stmt: Stmt): raise NotImplementedError
     def visit_set_stmt(self, stmt: Stmt): raise NotImplementedError
+    def visit_if_stmt(self, stmt: Stmt): raise NotImplementedError
 
 
 class Stmt:
@@ -263,12 +258,12 @@ class Expression(Stmt):
         return visitor.visit_expression_stmt(self)
     
 
-class Print(Stmt):
+class Write(Stmt):
     def __init__(self, expressions: List[Expr]):
         self.expressions = expressions
 
     def accept(self, visitor: StmtVisitor):
-        return visitor.visit_print_stmt(self)
+        return visitor.visit_write_stmt(self)
     
 
 class Set(Stmt):
@@ -278,9 +273,38 @@ class Set(Stmt):
 
     def accept(self, visitor: StmtVisitor):
         return visitor.visit_set_stmt(self)
+    
+
+class If(Stmt):
+    def __init__(self, condition: Expr, branch: Stmt, else_branch: Stmt):
+        self.condition = condition
+        self.branch = branch
+        self.else_branch = else_branch
+
+    def accept(self, visitor: StmtVisitor):
+        return visitor.visit_if_stmt(self)
+    
+
+class Condition(Stmt):
+    # TODO: conditional to handle multiple if and else
+    """
+    (cond
+        ((> x 0) (Write "positive"))
+        ((= x 0) (Write "zero"))
+        ((< x 0) (Write "negative"))
+        (else (Write "unknown")))
+    """
+    def __init__(self) -> None:
+        ...
 
 
 class Parser:
+    """Parse tokens.
+
+    This class handles the parsing of tokens and returns a list of statements
+    that represent the program.
+
+    """
     def __init__(self, tokens: List[Token]):
         self.tokens = tokens
         self.current = 0
@@ -288,17 +312,17 @@ class Parser:
     def parse(self) -> List[Stmt]:
         statements = []
         while not self.is_at_end():
-            statements.append(self.declaration())
+            statements.append(self.statement())
         return statements
     
-    def declaration(self) -> Stmt:
-        self.consume(TokenType.LEFT_PAREN, "Expect '(' before expression.")
-        if self.match(TokenType.SET): return self.set_statement()
-        return self.statement()
-    
     def statement(self) -> Stmt:
+        self.consume(TokenType.LEFT_PAREN, "Expect '(' before expression.")
+        if self.match(TokenType.SET):
+            return self.set_statement()
         if self.match(TokenType.WRITE):
-            return self.print_statement()
+            return self.write_statement()
+        if self.match(TokenType.IF):
+            return self.if_statement()
         return self.expression_statement()
     
     def set_statement(self) -> Stmt:
@@ -307,12 +331,23 @@ class Parser:
         self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.")
         return Set(name, initializer)
     
-    def print_statement(self) -> Stmt:
+    def write_statement(self) -> Stmt:
         expressions = []
         while not self.check(TokenType.RIGHT_PAREN):
             expressions.append(self.expression())
         self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.")
-        return Print(expressions)
+        return Write(expressions)
+    
+    def if_statement(self) -> Stmt:
+        self.consume(TokenType.LEFT_PAREN, "Expect '(' before expression.")
+        condition = self.expression()
+        self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.")
+        branch = self.statement()
+        else_branch = None
+        if self.check(TokenType.LEFT_PAREN):
+            else_branch = self.statement()
+        self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.")
+        return If(condition, branch, else_branch)
    
     def expression_statement(self) -> Stmt:
         expr = self.expression()
@@ -390,6 +425,17 @@ class Parser:
 
 
 class Environment:
+    """Store variable.
+    
+    Environment holds mappings of variable names to their values.
+
+    However we must note that we can't declare a variable without
+    setting or assigning it to a value.
+
+    Variables by itself are static which mean it's lifetime
+    is the entire run of the program.
+
+    """
     def __init__(self):
         self.values = {}
 
@@ -404,6 +450,22 @@ class Environment:
 
 
 class Interpreter(ExprVisitor, StmtVisitor):
+    """Interpret Abstract Syntax Tree (AST).
+
+    This class deals with statement and expression execution. It takes
+    an Abstract Syntax Tree (AST) produced by the parser. The visitor pattern
+    is used to traverse the AST to execute or evaluate each statement or expression.
+
+    Attributes:
+        environment:
+            Store variables by utilizing dictionary or hash map.
+
+        eval:
+            Mode to print out an expression. Used mainly for interactive 
+            interpreter and debugging.
+
+    """
+
     def __init__(self, eval=False):
         self.environment = Environment()
         self.eval = eval
@@ -411,6 +473,7 @@ class Interpreter(ExprVisitor, StmtVisitor):
     def interpret(self, statements: List[Stmt]):
         results = []
         for stmt in statements:
+            # Only takes expression otherwise it'll print out None
             if self.eval and isinstance(stmt, Expression):
                 results.append(self.execute(stmt))
             else:
@@ -434,14 +497,20 @@ class Interpreter(ExprVisitor, StmtVisitor):
     
     @staticmethod
     def stringify(obj: Any) -> str:
+        """Convert an object to string.
+
+        Note that when a float only has '0' in their decimal part it will be converted into an
+        integer before being converted into a string.
+
+        """
         if isinstance(obj, str):
             return obj
         elif obj is None:
             return 'None'
         elif isinstance(obj, bool):
             return str(obj).lower()
-        elif isinstance(obj, float):
-            return str(int(obj)) if obj.is_integer() else str(obj)
+        elif isinstance(obj, float) and obj.is_integer() :
+            return str(int(obj))
         return str(obj)
     
     def check_number_operands(self, left: Any, operator: Token, right: Any):
@@ -450,12 +519,12 @@ class Interpreter(ExprVisitor, StmtVisitor):
     
     def check_number_operand(self, operator: Token, right: Any):
         if isinstance(right, float): return
-        raise RuntimeError(operator,"Operands must be type of number")
+        raise RuntimeError(operator,"Operand must be type of number")
     
     def visit_expression_stmt(self, stmt: Expression):
         return self.evaluate(stmt.expression) if self.eval else None
     
-    def visit_print_stmt(self, stmt: Print):
+    def visit_write_stmt(self, stmt: Write):
         values = [self.stringify(self.evaluate(expr)) for expr in stmt.expressions]
         print("".join(values))
         return None
@@ -464,6 +533,13 @@ class Interpreter(ExprVisitor, StmtVisitor):
         if stmt.initializer is not None:
             value = self.evaluate(stmt.initializer)
         self.environment.set(stmt.name.lexeme, value)
+        return None
+    
+    def visit_if_stmt(self, stmt: If):
+        if (self.is_truthy(self.evaluate(stmt.condition))):
+            self.execute(stmt.branch)
+        elif (stmt.else_branch is not None):
+            self.execute(stmt.else_branch)
         return None
 
     def visit_variable_expr(self, expr: Variable):
@@ -533,6 +609,18 @@ class Interpreter(ExprVisitor, StmtVisitor):
 
 
 class AstPrinter:
+    """Pretty print the Abstract Syntax Tree.
+
+    in:
+        (+ 2 3)
+    out:
+        Expression(
+            Binary(
+                Op=PLUS(+),
+                Left=Literal(value=2.0),
+                Right=Literal(value=3.0)))
+    
+    """
     def print(self, statements: List[Stmt]):
         print("Abstract Syntax Tree:")
         for stmt in statements:
@@ -540,17 +628,25 @@ class AstPrinter:
         print()
 
     def _print_stmt(self, stmt: Stmt, depth=0):
+        # TODO: this whole thing is a fucked up mess basically.
         indent = "   " * depth
         stmt_type = type(stmt).__name__
         print(indent + f"{stmt_type}(")
     
         if isinstance(stmt, Expression):
             self._print_expr(stmt.expression, depth + 1)
-        elif isinstance(stmt, Print):
-            self._print_expr(stmt.expression, depth + 1)
+        elif isinstance(stmt, Write):
+            for st in stmt.expressions:
+                self._print_expr(st, depth + 1)
         elif isinstance(stmt, Set):
             print(indent + "  ", f"Name={stmt.name}")
             self._print_expr(stmt.initializer, depth + 1, "set")
+        elif isinstance(stmt, If):
+            print(indent + "  ", f"Conditional=", end="")
+            self._print_expr(stmt.condition, depth + 1, "if")
+            print(",")
+            print(indent + "  ", f"Branch=", end="")
+            self._print_stmt(stmt.branch, depth + 1)
         print(indent + ")")
 
     def _print_expr(self, expr: Expr, depth=0, instance=None):
@@ -560,6 +656,8 @@ class AstPrinter:
         if isinstance(expr, Literal):
             if instance == "set":
                 print(indent, f"Initializer=", end="")
+                print(f"Literal(value={expr.value})", end="")
+            elif instance == "if":
                 print(f"Literal(value={expr.value})", end="")
             else:
                 print(indent + f"Literal(value={expr.value})", end="") if depth == 1 else print(f"Literal(value={expr.value})", end="")

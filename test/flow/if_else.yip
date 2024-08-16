@@ -1,0 +1,5 @@
+(set age 17)
+
+(if (>= age 18)
+    (write "You're legal. I'm touching you.")
+    (write "You're not legal. Check again next year."))
