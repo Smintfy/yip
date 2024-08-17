@@ -32,6 +32,7 @@ class TokenType(Enum):
 
     # Keywords
     SET = "SET"
+    SWAP = "SWAP"
     WRITE = "WRITE"
     PROC = "PROC"
     IF = "IF"
@@ -42,6 +43,10 @@ class TokenType(Enum):
     AND = "AND"
     NONE = "NONE"
     WHILE = "WHILE"
+    DO = "DO"
+
+    # math
+    ABS = "ABS"
 
     # End-of-line
     EOF = "EOF"
@@ -57,7 +62,10 @@ keywords = {
     "false": TokenType.FALSE,
     "or": TokenType.OR,
     "and": TokenType.AND,
-    "while": TokenType.WHILE
+    "while": TokenType.WHILE,
+    "do": TokenType.DO,
+    "swap": TokenType.SWAP,
+    "abs": TokenType.ABS
 }
 
 
@@ -247,6 +255,8 @@ class StmtVisitor:
     def visit_set_stmt(self, stmt: Stmt): raise NotImplementedError
     def visit_if_stmt(self, stmt: Stmt): raise NotImplementedError
     def visit_while_stmt(self, stmt: Stmt): raise NotImplementedError
+    def visit_block_stmt(self, stmt: Stmt): raise NotImplementedError
+    def visit_swap_stmt(self, stmt: Stmt): raise NotImplementedError
 
 
 class Stmt:
@@ -278,6 +288,23 @@ class Set(Stmt):
         return visitor.visit_set_stmt(self)
     
 
+class Swap(Expr):
+    def __init__(self, name: Token, value: Expr):
+        self.name = name
+        self.value = value
+
+    def accept(self, visitor: StmtVisitor):
+        return visitor.visit_swap_stmt(self)
+
+
+class Block(Stmt):
+    def __init__(self, statements: List[Stmt]):
+        self.statements = statements
+
+    def accept(self, visitor: StmtVisitor):
+        return visitor.visit_block_stmt(self)
+
+
 class If(Stmt):
     def __init__(self, condition: Expr, branch: Stmt, else_branch: Stmt):
         self.condition = condition
@@ -286,6 +313,15 @@ class If(Stmt):
 
     def accept(self, visitor: StmtVisitor):
         return visitor.visit_if_stmt(self)
+    
+
+class While(Stmt):
+    def __init__(self, condition: Expr, body: Stmt):
+        self.condition = condition
+        self.body = body
+
+    def accept(self, visitor: StmtVisitor):
+        return visitor.visit_while_stmt(self)
     
 
 class Condition(Stmt):
@@ -299,15 +335,6 @@ class Condition(Stmt):
     """
     def __init__(self) -> None:
         ...
-
-
-class While(Stmt):
-    def __init__(self, condition: Expr, body: Stmt | List[Stmt]):
-        self.condition = condition
-        self.body = body
-
-    def accept(self, visitor: StmtVisitor):
-        return visitor.visit_while_stmt(self)
 
 
 class Parser:
@@ -331,19 +358,36 @@ class Parser:
         self.consume(TokenType.LEFT_PAREN, "Expect '(' before expression.")
         if self.match(TokenType.SET):
             return self.set_statement()
+        if self.match(TokenType.SWAP):
+            return self.swap_statement()
         if self.match(TokenType.WRITE):
             return self.write_statement()
-        if self.match(TokenType.WHILE):
-            return self.while_statement()
+        if self.match(TokenType.DO):
+            return Block(self.block())
         if self.match(TokenType.IF):
             return self.if_statement()
+        if self.match(TokenType.WHILE):
+            return self.while_statement()
         return self.expression_statement()
+    
+    def block(self) -> List[Stmt]:
+        statements = []
+        while not self.check(TokenType.RIGHT_PAREN) and not self.is_at_end():
+            statements.append(self.statement())
+        self.consume(TokenType.RIGHT_PAREN, "Expect ')' after block.")
+        return statements
     
     def set_statement(self) -> Stmt:
         name = self.consume(TokenType.IDENTIFIER, "Expect variable name.")
         initializer = self.expression()
         self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.")
         return Set(name, initializer)
+    
+    def swap_statement(self) -> Stmt:
+        name = self.consume(TokenType.IDENTIFIER, "Expect variable name.")
+        value = self.expression()
+        self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.")
+        return Swap(name, value)
     
     def write_statement(self) -> Stmt:
         expressions = []
@@ -364,9 +408,9 @@ class Parser:
         return If(condition, branch, else_branch)
     
     def while_statement(self) -> Stmt:
-        self.consume(TokenType.LEFT_PAREN, "Expect '(' before condition.")
+        self.consume(TokenType.LEFT_PAREN, "Expect '(' before expression.")
         condition = self.expression()
-        self.consume(TokenType.RIGHT_PAREN, "Expect ')' after condition.")
+        self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.")
         body = self.statement()
         self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.")
         return While(condition, body)
@@ -393,7 +437,7 @@ class Parser:
 
     #TODO: allow single unary expression like (-3) or (-(expr))
     def unary(self) -> Expr:
-        if self.match(TokenType.MINUS, TokenType.BANG):
+        if self.match(TokenType.MINUS, TokenType.BANG, TokenType.ABS):
             operator = self.previous()
             right = self.unary()
             return Unary(operator, right)
@@ -461,16 +505,27 @@ class Environment:
     is the entire run of the program.
 
     """
-    def __init__(self):
+    def __init__(self, enclosing: Environment=None):
         self.values = {}
+        self.enclosing = enclosing
 
     def set(self, name: str, value: Any):
         self.values[name] = value
+
+    def swap(self, name: Token, value: Any):
+        if name.lexeme in self.values:
+            self.values[name.lexeme] = value
+        elif self.enclosing is not None:
+            self.enclosing.swap(name, value)
+        else:
+            raise RuntimeError(name, f"Undefined variable '{name.lexeme}'.")
 
     def get(self, name: Token):
         try:
             return self.values[name.lexeme]
         except KeyError:
+            if self.enclosing is not None:
+                return self.enclosing.get(name)
             raise RuntimeError(name, f"Undefined variable '{name.lexeme}'.")
 
 
@@ -560,6 +615,23 @@ class Interpreter(ExprVisitor, StmtVisitor):
         self.environment.set(stmt.name.lexeme, value)
         return None
     
+    def visit_swap_stmt(self, stmt: Swap):
+        value = self.evaluate(stmt.value)
+        self.environment.swap(stmt.name, value)
+        return None
+
+    def visit_block_stmt(self, stmt: Block):
+        self.execute_block(stmt.statements, Environment(self.environment))
+
+    def execute_block(self, statements: List[Stmt], environment: Environment):
+        previous = self.environment
+        try:
+            self.environment = environment
+            for stmt in statements:
+                self.execute(stmt)
+        finally:
+            self.environment = previous
+    
     def visit_if_stmt(self, stmt: If):
         if (self.is_truthy(self.evaluate(stmt.condition))):
             self.execute(stmt.branch)
@@ -588,6 +660,9 @@ class Interpreter(ExprVisitor, StmtVisitor):
                 return -right
             case TokenType.BANG:
                 return not self.is_truthy(right)
+            case TokenType.ABS:
+                self.check_number_operand(expr.operator, right)
+                return abs(right)
         raise RuntimeError(f"Unknown operator {expr.operator.lexeme} in line {expr.operator.line}")
 
     def visit_binary_expr(self, expr: Binary):
@@ -651,65 +726,7 @@ class AstPrinter:
                 Right=Literal(value=3.0)))
     
     """
-    def print(self, statements: List[Stmt]):
-        print("Abstract Syntax Tree:")
-        for stmt in statements:
-            self._print_stmt(stmt)
-        print()
-
-    def _print_stmt(self, stmt: Stmt, depth=0):
-        # TODO: this whole thing is a fucked up mess basically.
-        indent = "   " * depth
-        stmt_type = type(stmt).__name__
-        print(indent + f"{stmt_type}(")
-    
-        if isinstance(stmt, Expression):
-            self._print_expr(stmt.expression, depth + 1)
-        elif isinstance(stmt, Write):
-            for st in stmt.expressions:
-                self._print_expr(st, depth + 1)
-        elif isinstance(stmt, Set):
-            print(indent + "  ", f"Name={stmt.name}")
-            self._print_expr(stmt.initializer, depth + 1, "set")
-        elif isinstance(stmt, If):
-            print(indent + "  ", f"Conditional=", end="")
-            self._print_expr(stmt.condition, depth + 1, "if")
-            print(",")
-            print(indent + "  ", f"Branch=", end="")
-            self._print_stmt(stmt.branch, depth + 1)
-        print(indent + ")")
-
-    def _print_expr(self, expr: Expr, depth=0, instance=None):
-        # TODO: idk, improve the indentation? I mean it's good already. (If not lazy)
-        indent = "  " * depth
-
-        if isinstance(expr, Literal):
-            if instance == "set":
-                print(indent, f"Initializer=", end="")
-                print(f"Literal(value={expr.value})", end="")
-            elif instance == "if":
-                print(f"Literal(value={expr.value})", end="")
-            else:
-                print(indent + f"Literal(value={expr.value})", end="") if depth == 1 else print(f"Literal(value={expr.value})", end="")
-        elif isinstance(expr, Unary):
-            print(indent + f"Unary(") if depth == 1 else print(f"Unary(")
-            print(indent + "  ", f"Op={expr.operator.token_type.value}({expr.operator.lexeme})")
-            print(indent + "  ", f"Right=", end="")
-            self._print_expr(expr.right, depth + 2)
-            print(")", end="")
-        elif isinstance(expr, Variable):
-            print(indent + f"Variable(") if depth == 1 else print(f"Unary(")
-            print(indent + "  ", f"Name={expr.name}")
-            print(")", end="")
-        elif isinstance(expr, Binary):
-            print(indent + f"Binary(") if depth == 1 else print(f"Binary(")
-            print(indent + "  ", f"Op={expr.operator.token_type.value}({expr.operator.lexeme}),")
-            print(indent + "  ", "Left=", end="")
-            self._print_expr(expr.left, depth + 2)
-            print(",")
-            print(indent + "  ", "Right=", end="")
-            self._print_expr(expr.right, depth + 2)
-            print(")", end="")
+    ...
 
 
 def run(source: str, debug_source=False, tokenize=False, eval=False, ast=False, interactive=False):
@@ -725,10 +742,6 @@ def run(source: str, debug_source=False, tokenize=False, eval=False, ast=False, 
         return
 
     statements = Parser(tokens).parse()
-    if ast:
-        printer = AstPrinter()
-        printer.print(statements)
-    
     interpreter = Interpreter(eval)
     if eval:
         results = interpreter.interpret(statements)
@@ -746,6 +759,15 @@ def run_file(fpath: str, debug_source: bool, tokenize: bool, eval: bool, ast: bo
 
 
 def run_interactive():
+    from datetime import datetime
+
+    now = datetime.now()
+
+    print("Yip REPL",
+          f"({datetime.now().strftime('%B %d %Y, %H:%M:%S')})",
+          f"[CPython {sys.version.split(' ')[0]}]",
+          f"on {sys.platform}")
+    print('Type "help" for more information.')
     while True:
         line = input(">>> ")
         if line.lower() == "quit":

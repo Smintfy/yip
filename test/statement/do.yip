@@ -1,0 +1,5 @@
+(do
+    (set x 9)
+    (write "Hello")
+    (write "World")
+    (write (+ x 5)))

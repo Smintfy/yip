@@ -1,0 +1,11 @@
+(set x 8)
+
+(if (> x 9)
+    (do
+        (set y (+ x 1))
+        (swap x y))
+    (do
+        (set y (- x 1))
+        (swap x y)))
+
+(write x)

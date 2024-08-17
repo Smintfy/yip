@@ -1,1 +1,6 @@
-(while (true) (write "hello"))
+(set x 1)
+
+(while (<= x 10)
+    (do
+        (write x ". Hello, World!")
+        (swap x (+ x 1))))
