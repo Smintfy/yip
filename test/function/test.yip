@@ -1,0 +1,9 @@
+(fn addTwoNumber [a b]
+    (do
+        (write (+ a b))))
+
+(fn callAddTwoNumber [x y]
+    (do
+        (addTwoNumber [x y])))
+
+(callAddTwoNumber [1 2])

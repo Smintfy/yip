@@ -1,0 +1,5 @@
+(fn a []
+    (do
+        (write "hello, world!")))
+
+(a [])

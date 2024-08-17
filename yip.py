@@ -9,6 +9,8 @@ class TokenType(Enum):
     # Single character
     LEFT_PAREN  = "LEFT_PAREN"
     RIGHT_PAREN = "RIGHT_PAREN"
+    LEFT_SQUAB = "LEFT_SQUAB"
+    RIGHT_SQUAB = "RIGHT_SQUAB"
     PLUS = "PLUS"
     MINUS = "MINUS"
     STAR = "STAR"
@@ -34,9 +36,8 @@ class TokenType(Enum):
     SET = "SET"
     SWAP = "SWAP"
     WRITE = "WRITE"
-    PROC = "PROC"
+    FUNCTION = "FUNCTION"
     IF = "IF"
-    ELSE = "ELSE"
     TRUE = "TRUE"
     FALSE = "FALSE"
     OR = "OR"
@@ -55,9 +56,8 @@ class TokenType(Enum):
 keywords = {
     "set": TokenType.SET,
     "write": TokenType.WRITE,
-    "proc": TokenType.PROC,
+    "fn": TokenType.FUNCTION,
     "if": TokenType.IF,
-    "else": TokenType.ELSE,
     "true": TokenType.TRUE,
     "false": TokenType.FALSE,
     "or": TokenType.OR,
@@ -105,6 +105,8 @@ class Lexer:
         match char:
             case "(": self.add_token(TokenType.LEFT_PAREN)
             case ")": self.add_token(TokenType.RIGHT_PAREN)
+            case "[": self.add_token(TokenType.LEFT_SQUAB)
+            case "]": self.add_token(TokenType.RIGHT_SQUAB)
             case "+": self.add_token(TokenType.PLUS)
             case "-": self.add_token(TokenType.MINUS)
             case "*": self.add_token(TokenType.STAR)
@@ -208,6 +210,7 @@ class ExprVisitor:
     def visit_unary_expr(self, expr: Expr): raise NotImplementedError
     def visit_binary_expr(self, expr: Expr): raise NotImplementedError
     def visit_variable_expr(self, expr: Expr): raise NotImplementedError
+    def visit_call_expr(self, expr: Expr): raise NotImplementedError
 
 
 class Expr:
@@ -249,6 +252,15 @@ class Variable(Expr):
         return visitor.visit_variable_expr(self)
     
 
+class Call(Expr):
+    def __init__(self, callee: Expr, arguments: List[Expr]):
+        self.callee = callee
+        self.arguments = arguments
+
+    def accept(self, visitor: ExprVisitor):
+        return visitor.visit_call_expr(self)
+    
+
 class StmtVisitor:
     def visit_expression_stmt(self, stmt: Stmt): raise NotImplementedError
     def visit_write_stmt(self, stmt: Stmt): raise NotImplementedError
@@ -257,6 +269,7 @@ class StmtVisitor:
     def visit_while_stmt(self, stmt: Stmt): raise NotImplementedError
     def visit_block_stmt(self, stmt: Stmt): raise NotImplementedError
     def visit_swap_stmt(self, stmt: Stmt): raise NotImplementedError
+    def visit_function_stmt(self, stmt: Stmt): raise NotImplementedError
 
 
 class Stmt:
@@ -337,6 +350,16 @@ class Condition(Stmt):
         ...
 
 
+class Function(Stmt):
+    def __init__(self, name: Token, params: List[Token], body: List[Stmt]):
+        self.name = name
+        self.params = params
+        self.body = body
+
+    def accept(self, visitor: StmtVisitor):
+        return visitor.visit_function_stmt(self)
+
+
 class Parser:
     """Parse tokens.
 
@@ -356,6 +379,8 @@ class Parser:
     
     def statement(self) -> Stmt:
         self.consume(TokenType.LEFT_PAREN, "Expect '(' before expression.")
+        if self.match(TokenType.FUNCTION):
+            return self.function()
         if self.match(TokenType.SET):
             return self.set_statement()
         if self.match(TokenType.SWAP):
@@ -370,6 +395,16 @@ class Parser:
             return self.while_statement()
         return self.expression_statement()
     
+    def function(self) -> Function:
+        name = self.consume(TokenType.IDENTIFIER, "Expect function name.")
+        self.consume(TokenType.LEFT_SQUAB, "Expect '[' after function name.")
+        parameters = []
+        while not self.check(TokenType.RIGHT_SQUAB):
+            parameters.append(self.consume(TokenType.IDENTIFIER, "Expect parameter name."))
+        self.consume(TokenType.RIGHT_SQUAB, "Expect ']' after parameters.")
+        body = self.block()
+        return Function(name, parameters, body)
+
     def block(self) -> List[Stmt]:
         statements = []
         while not self.check(TokenType.RIGHT_PAREN) and not self.is_at_end():
@@ -441,7 +476,24 @@ class Parser:
             operator = self.previous()
             right = self.unary()
             return Unary(operator, right)
-        return self.primary()
+        return self.call()
+    
+    def call(self) -> Expr:
+        expr = self.primary()
+
+        while True:
+            if self.match(TokenType.LEFT_SQUAB):
+                expr = self.finish_call(expr)
+            else:
+                break
+        return expr
+    
+    def finish_call(self, callee: Expr):
+        arguments = []
+        while not self.check(TokenType.RIGHT_SQUAB):
+            arguments.append(self.expression())
+        self.consume(TokenType.RIGHT_SQUAB, "Expect ']' after arguments.")
+        return Call(callee, arguments)
    
     def primary(self) -> Expr:
         if self.match(TokenType.TRUE):
@@ -491,7 +543,26 @@ class Parser:
         if self.check(type):
             return self.advance()
         raise RuntimeError(message)
+    
 
+class Callable:
+    def call(self, interpreter: Interpreter, arguments: List[Stmt]): raise NotImplemented
+    def arity(self) -> int: raise NotImplementedError
+
+
+class FunctionWrapper(Callable):
+    def __init__(self, declaration: Function):
+        self.declaration = declaration
+
+    def call(self, interpreter: Interpreter, arguments: List[Stmt]):
+        environment = Environment(interpreter.globals)
+        for i in range(len(self.declaration.params)):
+            environment.set(self.declaration.params[i].lexeme, arguments[i])
+        interpreter.execute_block(self.declaration.body, environment)
+        return None
+    
+    def arity(self) -> int:
+        return len(self.declaration.params)
 
 class Environment:
     """Store variable.
@@ -547,7 +618,8 @@ class Interpreter(ExprVisitor, StmtVisitor):
     """
 
     def __init__(self, eval=False):
-        self.environment = Environment()
+        self.globals = Environment()
+        self.environment = self.globals
         self.eval = eval
 
     def interpret(self, statements: List[Stmt]):
@@ -602,11 +674,17 @@ class Interpreter(ExprVisitor, StmtVisitor):
         raise RuntimeError(operator,"Operand must be type of number")
     
     def visit_expression_stmt(self, stmt: Expression):
-        return self.evaluate(stmt.expression) if self.eval else None
+        expression = self.evaluate(stmt.expression)
+        return expression if self.eval else None
     
     def visit_write_stmt(self, stmt: Write):
         values = [self.stringify(self.evaluate(expr)) for expr in stmt.expressions]
         print("".join(values))
+        return None
+    
+    def visit_function_stmt(self, stmt: Function):
+        function = FunctionWrapper(stmt)
+        self.environment.set(stmt.name.lexeme, function)
         return None
     
     def visit_set_stmt(self, stmt: Set):
@@ -664,6 +742,17 @@ class Interpreter(ExprVisitor, StmtVisitor):
                 self.check_number_operand(expr.operator, right)
                 return abs(right)
         raise RuntimeError(f"Unknown operator {expr.operator.lexeme} in line {expr.operator.line}")
+
+    def visit_call_expr(self, expr: Call):
+        callee = self.evaluate(expr.callee)
+        arguments = []
+        for arg in expr.arguments:
+            arguments.append(self.evaluate(arg))
+        if not isinstance(callee, Callable):
+            raise RuntimeError("Can only call functions.")
+        if len(arguments) != callee.arity():
+            raise RuntimeError(f"Expected {callee.arity()} arguments but got {len(arguments)}.")
+        return callee.call(self, arguments)
 
     def visit_binary_expr(self, expr: Binary):
         left = self.evaluate(expr.left)
@@ -760,8 +849,6 @@ def run_file(fpath: str, debug_source: bool, tokenize: bool, eval: bool, ast: bo
 
 def run_interactive():
     from datetime import datetime
-
-    now = datetime.now()
 
     print("Yip REPL",
           f"({datetime.now().strftime('%B %d %Y, %H:%M:%S')})",

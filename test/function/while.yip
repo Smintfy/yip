@@ -1,0 +1,8 @@
+(fn printMany [x message]
+    (do
+        (while (< 0 x)
+            (do
+                (write message)
+                (swap x (- x 1))))))
+
+(printMany [5 "I love you mya"])
