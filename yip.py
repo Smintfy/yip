@@ -53,22 +53,6 @@ class TokenType(Enum):
     EOF = "EOF"
 
 
-keywords = {
-    "set": TokenType.SET,
-    "write": TokenType.WRITE,
-    "fn": TokenType.FUNCTION,
-    "if": TokenType.IF,
-    "true": TokenType.TRUE,
-    "false": TokenType.FALSE,
-    "or": TokenType.OR,
-    "and": TokenType.AND,
-    "while": TokenType.WHILE,
-    "do": TokenType.DO,
-    "swap": TokenType.SWAP,
-    "abs": TokenType.ABS
-}
-
-
 class Token:
     def __init__(self, token_type: TokenType, lexeme: str, literal: Any, line: int):
         self.token_type = token_type
@@ -84,8 +68,23 @@ class Lexer:
     """Scan source.
 
     Lexer convert the source by analysing each character and groups
-    them into a tokens.
+    them into a list of tokens.
     """
+    keywords = {
+        "set": TokenType.SET,
+        "write": TokenType.WRITE,
+        "fn": TokenType.FUNCTION,
+        "if": TokenType.IF,
+        "true": TokenType.TRUE,
+        "false": TokenType.FALSE,
+        "or": TokenType.OR,
+        "and": TokenType.AND,
+        "while": TokenType.WHILE,
+        "do": TokenType.DO,
+        "swap": TokenType.SWAP,
+        "abs": TokenType.ABS
+    }
+
     def __init__(self, source: str):
         self.source = source
         self.tokens = []
@@ -97,6 +96,7 @@ class Lexer:
         while not self.is_at_end():
             self.start = self.current
             self.scan_token()
+        # EOF token to indicate the end of file.
         self.tokens.append(Token(TokenType.EOF, "", None, self.line))
         return self.tokens
 
@@ -111,36 +111,25 @@ class Lexer:
             case "-": self.add_token(TokenType.MINUS)
             case "*": self.add_token(TokenType.STAR)
             case "/": self.add_token(TokenType.SLASH)
-            case "!":
-                if self.match("="):
-                    self.add_token(TokenType.BANG_EQUAL)
-                else:
-                    self.add_token(TokenType.BANG)
-            case "=":
-                if self.match("="):
-                    self.add_token(TokenType.EQUAL_EQUAL)
-                else:
-                    self.add_token(TokenType.EQUAL)
-            case "<":
-                if self.match("="):
-                    self.add_token(TokenType.LESS_EQUAL)
-                else:
-                    self.add_token(TokenType.LESS)
-            case ">":
-                if self.match("="):
-                    self.add_token(TokenType.GREATER_EQUAL)
-                else:
-                    self.add_token(TokenType.GREATER)
             case "\n": self.line += 1
             case ";": self.comment()
             case '"': self.string()
+            case "!":
+                if self.match("="): self.add_token(TokenType.BANG_EQUAL)
+                else: self.add_token(TokenType.BANG)
+            case "=":
+                if self.match("="): self.add_token(TokenType.EQUAL_EQUAL)
+                else: self.add_token(TokenType.EQUAL)
+            case "<":
+                if self.match("="): self.add_token(TokenType.LESS_EQUAL)
+                else: self.add_token(TokenType.LESS)
+            case ">":
+                if self.match("="): self.add_token(TokenType.GREATER_EQUAL)
+                else: self.add_token(TokenType.GREATER)
             case _:
-                if char.isdigit():
-                    self.number()
-                elif char.isalpha():
-                    self.identifier()
-                elif char.isspace():
-                    pass
+                if char.isdigit(): self.number()
+                elif char.isalpha(): self.identifier()
+                elif char.isspace(): pass
                 else:
                     raise SyntaxError(f"Unexpected character: {char} in line: {self.line}")
 
@@ -152,8 +141,7 @@ class Lexer:
         return (self.current) >= len(self.source)
 
     def peek(self) -> str:
-        if self.is_at_end():
-            return "\0"
+        if self.is_at_end(): return "\0"
         return self.source[self.current]
     
     def peek_next(self) -> str:
@@ -161,6 +149,8 @@ class Lexer:
         return self.source[self.current + 1] 
     
     def add_token(self, token_type: TokenType, literal: Any=None):
+        # There are some tokens literal that doesn't have literal.
+        # We defaul them into None.
         text = self.source[self.start:self.current]
         self.tokens.append(Token(token_type, text, literal, self.line))
 
@@ -177,6 +167,8 @@ class Lexer:
             raise ValueError(f"Unterminated string in line: {self.line}")
         self.advance()
 
+        # Extract the the substring of source.
+        # Start from the start location of a double quote to the next double quote location.
         value = self.source[(self.start + 1):(self.current - 1)]
         self.add_token(TokenType.STRING, value)
 
@@ -184,6 +176,7 @@ class Lexer:
         while self.peek().isdigit():
             self.advance()
         
+        # Scan the decimal part of a number.
         if (self.peek() == "." and self.peek_next().isdigit):
             self.advance()
             while self.peek().isdigit():
@@ -194,8 +187,9 @@ class Lexer:
         while self.peek().isalnum():
             self.advance()
         key = self.source[self.start:self.current]
-        token_type = keywords.get(key)
+        token_type = self.keywords.get(key)
 
+        # Used for variable name.
         if token_type is None:
             token_type = TokenType.IDENTIFIER
         self.add_token(token_type)
@@ -207,33 +201,14 @@ class Lexer:
 
 class ExprVisitor:
     def visit_literal_expr(self, expr: Expr): raise NotImplementedError
-    def visit_unary_expr(self, expr: Expr): raise NotImplementedError
-    def visit_binary_expr(self, expr: Expr): raise NotImplementedError
     def visit_variable_expr(self, expr: Expr): raise NotImplementedError
+    def visit_unary_expr(self, expr: Expr): raise NotImplementedError
     def visit_call_expr(self, expr: Expr): raise NotImplementedError
+    def visit_binary_expr(self, expr: Expr): raise NotImplementedError
 
 
 class Expr:
     def accept(visitor: ExprVisitor): raise NotImplementedError
-
-
-class Binary(Expr):
-    def __init__(self, left: Expr, operator: Token, right: Expr):
-        self.left = left
-        self.operator = operator
-        self.right = right
-
-    def accept(self, visitor: ExprVisitor):
-        return visitor.visit_binary_expr(self)
-
-
-class Unary(Expr):
-    def __init__(self, operator: Token, right: Expr):
-        self.operator = operator
-        self.right = right
-
-    def accept(self, visitor: ExprVisitor):
-        return visitor.visit_unary_expr(self)
 
 
 class Literal(Expr):
@@ -250,6 +225,15 @@ class Variable(Expr):
 
     def accept(self, visitor: ExprVisitor):
         return visitor.visit_variable_expr(self)
+
+
+class Unary(Expr):
+    def __init__(self, operator: Token, right: Expr):
+        self.operator = operator
+        self.right = right
+
+    def accept(self, visitor: ExprVisitor):
+        return visitor.visit_unary_expr(self)
     
 
 class Call(Expr):
@@ -259,16 +243,26 @@ class Call(Expr):
 
     def accept(self, visitor: ExprVisitor):
         return visitor.visit_call_expr(self)
+
+
+class Binary(Expr):
+    def __init__(self, left: Expr, operator: Token, right: Expr):
+        self.left = left
+        self.operator = operator
+        self.right = right
+
+    def accept(self, visitor: ExprVisitor):
+        return visitor.visit_binary_expr(self)
     
 
 class StmtVisitor:
     def visit_expression_stmt(self, stmt: Stmt): raise NotImplementedError
     def visit_write_stmt(self, stmt: Stmt): raise NotImplementedError
     def visit_set_stmt(self, stmt: Stmt): raise NotImplementedError
+    def visit_swap_stmt(self, stmt: Stmt): raise NotImplementedError
+    def visit_block_stmt(self, stmt: Stmt): raise NotImplementedError
     def visit_if_stmt(self, stmt: Stmt): raise NotImplementedError
     def visit_while_stmt(self, stmt: Stmt): raise NotImplementedError
-    def visit_block_stmt(self, stmt: Stmt): raise NotImplementedError
-    def visit_swap_stmt(self, stmt: Stmt): raise NotImplementedError
     def visit_function_stmt(self, stmt: Stmt): raise NotImplementedError
 
 
@@ -345,6 +339,7 @@ class Condition(Stmt):
         ((= x 0) (Write "zero"))
         ((< x 0) (Write "negative"))
         (else (Write "unknown")))
+
     """
     def __init__(self) -> None:
         ...
@@ -378,34 +373,41 @@ class Parser:
         return statements
     
     def statement(self) -> Stmt:
+        # We consume a left parentheses.
+        # This is because each statement or expression starts with a left parentheses and ends with a right parentheses.
+        # We left the right parentheses to be handled by each corresponding statement or expression.
         self.consume(TokenType.LEFT_PAREN, "Expect '(' before expression.")
-        if self.match(TokenType.FUNCTION):
-            return self.function()
-        if self.match(TokenType.SET):
-            return self.set_statement()
-        if self.match(TokenType.SWAP):
-            return self.swap_statement()
-        if self.match(TokenType.WRITE):
-            return self.write_statement()
-        if self.match(TokenType.DO):
-            return Block(self.block())
-        if self.match(TokenType.IF):
-            return self.if_statement()
-        if self.match(TokenType.WHILE):
-            return self.while_statement()
+
+        if self.match(TokenType.FUNCTION): return self.function()
+        elif self.match(TokenType.SET): return self.set_statement()
+        elif self.match(TokenType.SWAP): return self.swap_statement()
+        elif self.match(TokenType.WRITE): return self.write_statement()
+        elif self.match(TokenType.DO): return Block(self.block())
+        elif self.match(TokenType.IF): return self.if_statement()
+        elif self.match(TokenType.WHILE): return self.while_statement()
+
+        # If it's an expression we pass it here.
         return self.expression_statement()
     
     def function(self) -> Function:
+        # Function is denoted by (fn [param] (do (...)))
         name = self.consume(TokenType.IDENTIFIER, "Expect function name.")
+
+        # Parse the parameters inside the [param]
         self.consume(TokenType.LEFT_SQUAB, "Expect '[' after function name.")
         parameters = []
         while not self.check(TokenType.RIGHT_SQUAB):
             parameters.append(self.consume(TokenType.IDENTIFIER, "Expect parameter name."))
         self.consume(TokenType.RIGHT_SQUAB, "Expect ']' after parameters.")
+
+        # Function body is inside a block.
+        # This makes it easier to execute the statements inside a function body.
         body = self.block()
         return Function(name, parameters, body)
 
     def block(self) -> List[Stmt]:
+        # Group or list of statements.
+        # Block is denoted by (do (statement 1) ... (statement n))
         statements = []
         while not self.check(TokenType.RIGHT_PAREN) and not self.is_at_end():
             statements.append(self.statement())
@@ -413,18 +415,25 @@ class Parser:
         return statements
     
     def set_statement(self) -> Stmt:
+        # Declare or initialize a variable.
+        # Set is denoted by (set identifier (expr))
+        # The value that is set to a variable must be an expression.
         name = self.consume(TokenType.IDENTIFIER, "Expect variable name.")
         initializer = self.expression()
-        self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.")
+        self.consume(TokenType.RIGHT_PAREN, "Expect ')' after variable declaration.")
         return Set(name, initializer)
     
     def swap_statement(self) -> Stmt:
+        # Mutate or update a variable.
+        # Swap is denoted by (swap variable (expr))
         name = self.consume(TokenType.IDENTIFIER, "Expect variable name.")
         value = self.expression()
         self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.")
         return Swap(name, value)
     
     def write_statement(self) -> Stmt:
+        # Print string out to the terminal or display.
+        # Denoted by (write (expr) ... (expr n))
         expressions = []
         while not self.check(TokenType.RIGHT_PAREN):
             expressions.append(self.expression())
@@ -432,10 +441,16 @@ class Parser:
         return Write(expressions)
     
     def if_statement(self) -> Stmt:
+        # Control flow used to evaluate one of the two possible branch that is true or false.
+        # Denoted by (if (condition) (true branch) (false branch))
         self.consume(TokenType.LEFT_PAREN, "Expect '(' before expression.")
         condition = self.expression()
         self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.")
         branch = self.statement()
+
+        # We set the else branch to None by default.
+        # This is because there's cases where we don't want to branch into the else branch if the condition is false,
+        # And only want to evaluate the branch if the conditrion is true
         else_branch = None
         if self.check(TokenType.LEFT_PAREN):
             else_branch = self.statement()
@@ -470,8 +485,8 @@ class Parser:
             return left
         return self.unary()
 
-    #TODO: allow single unary expression like (-3) or (-(expr))
     def unary(self) -> Expr:
+        #TODO: allow single unary expression like (-3) or (-(expr))
         if self.match(TokenType.MINUS, TokenType.BANG, TokenType.ABS):
             operator = self.previous()
             right = self.unary()
@@ -479,6 +494,8 @@ class Parser:
         return self.call()
     
     def call(self) -> Expr:
+        # Callee or function call.
+        # (functionName [param])
         expr = self.primary()
 
         while True:
@@ -496,10 +513,8 @@ class Parser:
         return Call(callee, arguments)
    
     def primary(self) -> Expr:
-        if self.match(TokenType.TRUE):
-            return Literal(True)
-        elif self.match(TokenType.FALSE):
-            return Literal(False)
+        if self.match(TokenType.TRUE): return Literal(True)
+        elif self.match(TokenType.FALSE): return Literal(False)
         elif self.match(TokenType.NUMBER, TokenType.STRING):
             return Literal(self.previous().literal)
         elif self.match(TokenType.IDENTIFIER):
@@ -518,13 +533,11 @@ class Parser:
         return False
 
     def check(self, type: TokenType) -> bool:
-        if self.is_at_end():
-            return False
+        if self.is_at_end(): return False
         return self.peek().token_type == type
 
     def advance(self) -> Token:
-        if not self.is_at_end():
-            self.current += 1
+        if not self.is_at_end(): self.current += 1
         return self.previous()
 
     def is_at_end(self) -> bool:
@@ -540,8 +553,7 @@ class Parser:
         return self.tokens[self.current - 1]
 
     def consume(self, type: TokenType, message: str) -> Token:
-        if self.check(type):
-            return self.advance()
+        if self.check(type): return self.advance()
         raise RuntimeError(message)
     
 
@@ -673,21 +685,14 @@ class Interpreter(ExprVisitor, StmtVisitor):
         if isinstance(right, float): return
         raise RuntimeError(operator,"Operand must be type of number")
     
-    def visit_expression_stmt(self, stmt: Expression):
-        expression = self.evaluate(stmt.expression)
-        return expression if self.eval else None
-    
-    def visit_write_stmt(self, stmt: Write):
-        values = [self.stringify(self.evaluate(expr)) for expr in stmt.expressions]
-        print("".join(values))
-        return None
-    
     def visit_function_stmt(self, stmt: Function):
+        # Initialize function into the environment.
         function = FunctionWrapper(stmt)
         self.environment.set(stmt.name.lexeme, function)
         return None
     
     def visit_set_stmt(self, stmt: Set):
+        # Initialize variable into the environment.
         if stmt.initializer is not None:
             value = self.evaluate(stmt.initializer)
         self.environment.set(stmt.name.lexeme, value)
@@ -697,22 +702,11 @@ class Interpreter(ExprVisitor, StmtVisitor):
         value = self.evaluate(stmt.value)
         self.environment.swap(stmt.name, value)
         return None
-
-    def visit_block_stmt(self, stmt: Block):
-        self.execute_block(stmt.statements, Environment(self.environment))
-
-    def execute_block(self, statements: List[Stmt], environment: Environment):
-        previous = self.environment
-        try:
-            self.environment = environment
-            for stmt in statements:
-                self.execute(stmt)
-        finally:
-            self.environment = previous
     
     def visit_if_stmt(self, stmt: If):
         if (self.is_truthy(self.evaluate(stmt.condition))):
             self.execute(stmt.branch)
+        # The optional else branch.
         elif (stmt.else_branch is not None):
             self.execute(stmt.else_branch)
         return None
@@ -721,6 +715,35 @@ class Interpreter(ExprVisitor, StmtVisitor):
         while (self.is_truthy(self.evaluate(stmt.condition))):
             self.execute(stmt.body)
         return None
+    
+    def visit_block_stmt(self, stmt: Block):
+        # Before executing the block,
+        # We also pass the current environment so we can handle local scope.
+        self.execute_block(stmt.statements, Environment(self.environment))
+
+    def visit_write_stmt(self, stmt: Write):
+        # Expression which can be any object is converted to string before being printed.
+        values = [self.stringify(self.evaluate(expr)) for expr in stmt.expressions]
+        print("".join(values))
+        return None
+    
+    def visit_expression_stmt(self, stmt: Expression):
+        expression = self.evaluate(stmt.expression)
+        return expression if self.eval else None
+
+    def execute_block(self, statements: List[Stmt], environment: Environment):
+        # Store the current or base environment.
+        # This is pretty similar to Stack Pointer and Base Pointer in a way!
+        previous = self.environment
+        try:
+            # Initialize an environment inside the block.
+            # This make the environment inside a block local.
+            self.environment = environment
+            for stmt in statements:
+                self.execute(stmt)
+        finally:
+            # Restore the previous environment
+            self.environment = previous
 
     def visit_variable_expr(self, expr: Variable):
         return self.environment.get(expr.name)
@@ -761,20 +784,26 @@ class Interpreter(ExprVisitor, StmtVisitor):
 
         match operator_type:
             case TokenType.PLUS:
-                if expr.operator.token_type == TokenType.PLUS:
-                    if isinstance(left, float) and isinstance(right, float):
-                        return left + right
-                    elif isinstance(left, str) and isinstance(right, str):
-                        return left + right
-                    else:
-                        raise TypeError(f"Mismatch operation type between {type(left)} and {type(right)}")
+                if isinstance(left, float) and isinstance(right, float):
+                    return left + right
+                elif isinstance(left, str) and isinstance(right, str):
+                    return left + right
+                else:
+                    raise TypeError(f"Mismatch operation type between {type(left)} and {type(right)}")
+            case TokenType.STAR:
+                if isinstance(left, str) and right.is_integer():
+                    return left * int(right)
+                elif left.is_integer() and isinstance(right, str):
+                    return int(left) * right
+                self.check_number_operands(left, expr.operator, right)
+                return left * right
+            case TokenType.OR:
+                return (self.is_truthy(left) or self.is_truthy(right))
+            case TokenType.AND:
+                return (self.is_truthy(left) and self.is_truthy(right))
             case TokenType.MINUS:
                 self.check_number_operands(left, expr.operator, right)
                 return left - right
-            # TODO: multiply string with a number
-            case TokenType.STAR:
-                self.check_number_operands(left, expr.operator, right)
-                return left * right
             case TokenType.SLASH:
                 self.check_number_operands(left, expr.operator, right)
                 return left / right
@@ -782,11 +811,6 @@ class Interpreter(ExprVisitor, StmtVisitor):
                 return self.is_equal(left, right)
             case TokenType.BANG_EQUAL:
                 return not self.is_equal(left, right)
-            case TokenType.OR:
-                return (self.is_truthy(left) or self.is_truthy(right))
-            case TokenType.AND:
-                return (self.is_truthy(left) and self.is_truthy(right))
-            # TODO: allow grouped comparison such as (< a b c ...)
             case TokenType.LESS:
                 self.check_number_operands(left, expr.operator, right)
                 return left < right
