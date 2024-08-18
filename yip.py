@@ -181,6 +181,18 @@ class Lexer:
             self.advance()
             while self.peek().isdigit():
                 self.advance()
+
+        # Scan scientific notation
+        # 1e-5, 1e2, 2.4e3
+        if self.peek() == "e":
+            self.advance()
+            if self.peek() == "-": self.advance()
+
+            # This makes sure a number has to come after e.
+            if not self.peek().isdigit():
+                raise ValueError("Invalid scientific notation: Expected integer after exponent")
+            while self.peek().isdigit():
+                self.advance()
         self.add_token(TokenType.NUMBER, float(self.source[self.start:self.current]))
 
     def identifier(self):
