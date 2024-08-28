@@ -21,3 +21,5 @@ yip is a toy interpreted functional programming language.
 
 (sqrt [2]) ; print out 1.414213562373095
 ``` 
+
+TODO: Rewrite in rust
