@@ -1,13 +1,11 @@
 (set x 20) ; global scope variable x
 
-(do
-    (set x 10) ; does not mutate the outer scope as it's local
+((set x 10) ; does not mutate the outer scope as it's local
     (write x)) ; this will print 10
 
 (write x) ; this will print 20
 
-(do
-    (swap x 5)) ; use swap to mutate the x in the outer scope or global scope
+((swap x 5)) ; use swap to mutate the x in the outer scope or global scope
 
 (write x) ; this will print 5
 
