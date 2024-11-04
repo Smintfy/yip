@@ -1,12 +1,12 @@
 const std = @import("std");
 const tk = @import("token.zig");
 
-const Lexer = struct {
+pub const Lexer = struct {
     source: []const u8,
     tokens: std.ArrayList(tk.Token),
     current: u32,
 
-    fn new(allocator: std.mem.Allocator, source: []const u8) Lexer {
+    pub fn new(allocator: std.mem.Allocator, source: []const u8) Lexer {
         return Lexer{
             .source = source,
             .tokens = std.ArrayList(tk.Token).init(allocator),
@@ -14,7 +14,7 @@ const Lexer = struct {
         };
     }
 
-    fn tokenize(self: *Lexer) !std.ArrayList((tk.Token)) {
+    pub fn tokenize(self: *Lexer) ![]tk.Token {
         for (self.source) |c| {
             try switch (c) {
                 '(' => self.tokens.append(tk.Token{ .type = tk.TokenKind.LEFT_PAREN, .literal = "(" }),
@@ -28,7 +28,7 @@ const Lexer = struct {
                 }
             };
         }
-        return self.tokens;
+        return self.tokens.toOwnedSlice();
     }
 
     fn advance(self: *Lexer) []const u8 {
@@ -37,18 +37,19 @@ const Lexer = struct {
     }
 };
 
-pub fn main() !void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
-    const source = "()+-=";
+test "tokens" {
+    const allocator = std.testing.allocator;
+    const source = "()";
 
     var lexer = Lexer.new(allocator, source);
     defer lexer.tokens.deinit();
     const tokens = try lexer.tokenize();
+    defer allocator.free(tokens);
 
-    for (tokens.items) |t| {
-        std.debug.print("{s} {?s}\n", .{t.literal, std.enums.tagName(tk.TokenKind, t.type)});
-    }
+    const expected_tokens = [_]tk.Token{
+        .{ .type = tk.TokenKind.LEFT_PAREN, .literal = "(" },
+        .{ .type = tk.TokenKind.RIGHT_PAREN, .literal = ")" }
+    };
+
+    try std.testing.expectEqualSlices(tk.Token, &expected_tokens ,tokens);
 }
