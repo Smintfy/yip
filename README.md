@@ -1,6 +1,8 @@
 # yip
 yip is a toy interpreted functional programming language.
 
+**NOTE**: Currently in the process of being re-written in zig.
+
 ### Example
 1. Square root approximation with binary search
 ```clj
@@ -20,6 +22,4 @@ yip is a toy interpreted functional programming language.
         (write "The square root of " x " is: " guess)))
 
 (sqrt [2]) ; print out 1.414213562373095
-``` 
-
-TODO: Rewrite in rust
+```

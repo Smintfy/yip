@@ -1,5 +1,8 @@
+*
+!/**/
+!*.*
+
 __pycache__
 
-# Added by cargo
-
-/target
+.zig-cache
+*.o
