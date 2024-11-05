@@ -1,5 +1,6 @@
 const std = @import("std");
 const lex = @import("lexer.zig");
+const tk = @import("token.zig");
 const Lexer = lex.Lexer;
 
 pub fn main() !void {
@@ -7,10 +8,10 @@ pub fn main() !void {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const source = "()+-=";
+    const source = "set x :: 9";
 
     var lexer = Lexer.new(allocator, source);
-    defer lexer.tokens.deinit();
+    defer lexer.deinit();
     const tokens = try lexer.tokenize();
     defer allocator.free(tokens);
 
