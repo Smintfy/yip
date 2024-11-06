@@ -7,7 +7,7 @@ pub const Lexer = struct {
     current: usize,
 
     pub fn new(allocator: std.mem.Allocator, source: []const u8) Lexer {
-        return Lexer{
+        return Lexer {
             .source = source,
             .tokens = std.ArrayList(tk.Token).init(allocator),
             .current = 0,
@@ -37,8 +37,7 @@ pub const Lexer = struct {
                     }
                 },
                 '!' => {
-                    if (self.peekChar() == '=') {
-                        _ = self.advance();
+                    if (self.match('=')) {
                         try self.tokens.append(.{
                             .type = .NOT_EQUAL,
                             .literal = self.source[self.current - 2..self.current]
@@ -51,8 +50,7 @@ pub const Lexer = struct {
                     }
                 },
                 '>' => {
-                    if (self.peekChar() == '=') {
-                        _ = self.advance();
+                    if (self.match('=')) {
                         try self.tokens.append(.{
                             .type = .GREATER_EQUAL,
                             .literal = self.source[self.current - 2..self.current]
@@ -65,8 +63,7 @@ pub const Lexer = struct {
                     }
                 },
                 '<' => {
-                    if (self.peekChar() == '=') {
-                        _ = self.advance();
+                    if (self.match('=')) {
                         try self.tokens.append(.{
                             .type = .LESS_EQUAL,
                             .literal = self.source[self.current - 2..self.current]
@@ -111,7 +108,7 @@ pub const Lexer = struct {
                 },
                 else => {
                     if (std.ascii.isWhitespace(c)) continue;
-                    std.log.err("Unexpected character found: {c}\n", .{c});
+                    std.log.err("Unexpected character found: {c}", .{c});
                     std.process.exit(1);
                 }
             };
@@ -121,6 +118,13 @@ pub const Lexer = struct {
             .literal = "EOF"
         });
         return self.tokens.toOwnedSlice();
+    }
+
+    fn match(self: *Lexer, expected: u8) bool {
+        if (self.current >= self.source.len) return false;
+        if (self.peekChar() != expected) return false;
+        self.current += 1;
+        return true;
     }
 
     fn advance(self: *Lexer) ?u8 {
@@ -279,3 +283,18 @@ test "identifiers" {
         try std.testing.expectEqualStrings(expected.literal, tokens[i].literal);
     }
 }
+
+// test "functions" {
+//     const source =
+//         \\ fn fib (n) ::
+//         \\     if (n < 2)
+//         \\         then n
+//         \\     else
+//         \\         fib (n - 1) + fib (n - 2)
+//         \\ end
+//         \\
+//         \\ fn main ::
+//         \\     print (fib(2))
+//         \\ end
+//     ;
+// }

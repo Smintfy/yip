@@ -8,7 +8,7 @@ pub fn main() !void {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const source = "set x :: 9";
+    const source = "set x :: 9 _";
 
     var lexer = Lexer.new(allocator, source);
     defer lexer.deinit();

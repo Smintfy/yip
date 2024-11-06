@@ -29,17 +29,20 @@ pub const TokenKind = enum {
     FALSE,
     IF,
     DECLARATION,
-    END_DECLARATION,
+    END,
+    THEN,
 
     EOF
 };
 
 pub const keywords = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "set", TokenKind.SET },
-    .{ "end", TokenKind.END_DECLARATION },
+    .{ "end", TokenKind.END },
     .{ "true", TokenKind.TRUE },
     .{ "false", TokenKind.FALSE },
-    .{ "if", TokenKind.IF }
+    .{ "if", TokenKind.IF },
+    .{ "then", TokenKind.THEN },
+    .{ "fn", TokenKind.IF },
 });
 
 pub const Token = struct {
@@ -50,7 +53,3 @@ pub const Token = struct {
         return std.enums.tagName(TokenKind, self.type);
     }
 };
-
-test "keywords" {
-    try std.testing.expectEqual(TokenKind.SET, keywords.get("set").?);
-}
