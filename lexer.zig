@@ -5,12 +5,14 @@ pub const Lexer = struct {
     source: []const u8,
     tokens: std.ArrayList(tk.Token),
     current: usize,
+    line: usize,
 
     pub fn new(allocator: std.mem.Allocator, source: []const u8) Lexer {
-        return Lexer {
+        return .{
             .source = source,
             .tokens = std.ArrayList(tk.Token).init(allocator),
             .current = 0,
+            .line = 1,
         };
     }
 
@@ -27,11 +29,11 @@ pub const Lexer = struct {
                 '*' => self.tokens.append(.{ .type = .STAR, .literal = &[_]u8{c} }),
                 '/' => self.tokens.append(.{ .type = .SLASH, .literal = &[_]u8{c} }),
                 '=' => self.tokens.append(.{ .type = .EQUAL, .literal = &[_]u8{c} }),
+                '\n' => self.line += 1,
                 ':' => {
-                    if (self.peekChar() == ':') {
-                        _ = self.advance();
+                    if (self.match(':')) {
                         try self.tokens.append(.{
-                            .type = .DECLARATION,
+                            .type = .ASSIGN,
                             .literal = self.source[self.current - 2..self.current]
                         });
                     }
@@ -108,7 +110,8 @@ pub const Lexer = struct {
                 },
                 else => {
                     if (std.ascii.isWhitespace(c)) continue;
-                    std.log.err("Unexpected character found: {c}", .{c});
+                    // TODO: Better error formatting
+                    std.log.err("[{d}, {d}]: Unexpected character found: {c}", .{self.line, self.current - 1, c});
                     std.process.exit(1);
                 }
             };
@@ -255,12 +258,12 @@ test "identifiers" {
     const expected_tokens = [_]tk.Token{
         .{ .type = .SET, .literal = "set" },
         .{ .type = .IDENTIFIER, .literal = "x" },
-        .{ .type = .DECLARATION, .literal = "::" },
+        .{ .type = .ASSIGN, .literal = "::" },
         .{ .type = .NUMBER, .literal = "42" },
         // ============ //
         .{ .type = .SET, .literal = "set" },
         .{ .type = .IDENTIFIER, .literal = "y" },
-        .{ .type = .DECLARATION, .literal = "::" },
+        .{ .type = .ASSIGN, .literal = "::" },
         .{ .type = .NUMBER, .literal = "3" },
         .{ .type = .STAR, .literal = "*" },
         .{ .type = .LEFT_PAREN, .literal = "(" },
@@ -271,7 +274,7 @@ test "identifiers" {
         // ============ //
         .{ .type = .SET, .literal = "set" },
         .{ .type = .IDENTIFIER, .literal = "z" },
-        .{ .type = .DECLARATION, .literal = "::" },
+        .{ .type = .ASSIGN, .literal = "::" },
         .{ .type = .LEFT_SQUAB, .literal = "[" },
         .{ .type = .NUMBER, .literal = "69" },
         .{ .type = .COMMA, .literal = "," },

@@ -28,10 +28,11 @@ pub const TokenKind = enum {
     TRUE,
     FALSE,
     IF,
-    DECLARATION,
+    ASSIGN,
     END,
     THEN,
 
+    ERROR,
     EOF
 };
 

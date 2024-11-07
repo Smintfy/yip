@@ -1,50 +1,54 @@
 const std = @import("std");
 const tk = @import("token.zig");
 
-const Node = union(enum) {
-    Identifier: []const u8,
+pub const Node = union(enum) {
     Number: f64,
-    Set: struct {
-        name: *Node,
-        value: *Node,
-    },
-    Function: struct {
-        name: *Node,
-        params: [](*Node),
-        body: [](*Node),
-    },
-    BinaryOp: struct {
-        left: *Node,
-        op: tk.Token,
-        right: *Node,
-    },
+    String: []const u8,
+    Variable: tk.Token,
+    Set: struct { name: *Node, value: *Node },
+    Function: struct { name: *Node, args: []*Node, body: []*Node },
+    Call: struct { function: *Node, args: []*Node },
+    BinaryOp: struct { left: *Node, op: tk.Token, right: *Node },
+    UnaryOp: struct { op: tk.Token, expr: *Node },
 };
 
 test "ast" {
     const set_tree = Node {
         .Set = .{
-            .name = @constCast(&Node{ .Identifier = "foo" }),
+            .name = @constCast(&Node{
+                .Variable = tk.Token { .type = .IDENTIFIER, .literal = "foo" }
+            }),
             .value = @constCast(&Node{ .Number =  5.0 })
         }
     };
 
-    try std.testing.expectEqual("foo", set_tree.Set.name.Identifier);
+    try std.testing.expectEqual("foo", set_tree.Set.name.Variable.literal);
     try std.testing.expectEqual(@as(f64, 5.0), set_tree.Set.value.Number);
 
     const function_tree = Node {
         .Function = .{
-            .name = @constCast(&Node{ .Identifier = "add" }),
-            .params = @constCast(&[_]*Node{
-                    @constCast(&Node{ .Identifier = "x" }),
-                    @constCast(&Node{ .Identifier = "y" }),
+            .name = @constCast(&Node{
+                .Variable = tk.Token { .type = .IDENTIFIER, .literal = "add" }
+            }),
+            .args = @constCast(&[_]*Node{
+                    @constCast(&Node{
+                        .Variable = tk.Token { .type = .IDENTIFIER, .literal = "x" }
+                    }),
+                    @constCast(&Node{
+                        .Variable = tk.Token { .type = .IDENTIFIER, .literal = "y" }
+                    }),
                 },
             ),
             .body = @constCast(&[_]*Node{
                     @constCast(&Node {
                         .BinaryOp = .{
-                            .left = @constCast(&Node{ .Identifier = "x" }),
+                            .left = @constCast(&Node{
+                                .Variable = tk.Token { .type = .IDENTIFIER, .literal = "x" }
+                            }),
                             .op = tk.Token { .type = .PLUS, .literal = "+" },
-                            .right = @constCast(&Node{ .Identifier = "y" }),
+                            .right = @constCast(&Node{
+                                .Variable = tk.Token { .type = .IDENTIFIER, .literal = "y" }
+                            }),
                         },
                     }),
                 },
@@ -52,10 +56,10 @@ test "ast" {
         },
     };
 
-    try std.testing.expectEqual("add", function_tree.Function.name.Identifier);
-    try std.testing.expectEqual("x", function_tree.Function.params[0].Identifier);
-    try std.testing.expectEqual("y", function_tree.Function.params[1].Identifier);
-    try std.testing.expectEqual("x", function_tree.Function.body[0].BinaryOp.left.Identifier);
+    try std.testing.expectEqual("add", function_tree.Function.name.Variable.literal);
+    try std.testing.expectEqual("x", function_tree.Function.args[0].Variable.literal);
+    try std.testing.expectEqual("y", function_tree.Function.args[1].Variable.literal);
+    try std.testing.expectEqual("x", function_tree.Function.body[0].BinaryOp.left.Variable.literal);
     try std.testing.expectEqual("+", function_tree.Function.body[0].BinaryOp.op.literal);
-    try std.testing.expectEqual("y", function_tree.Function.body[0].BinaryOp.right.Identifier);
+    try std.testing.expectEqual("y", function_tree.Function.body[0].BinaryOp.right.Variable.literal);
 }
